@@ -4,6 +4,7 @@
 
 void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REAL nu, PrivGlobs& globs)
 {
+    #pragma omp parallel for collapse(2)
     for(unsigned i=0;i<globs.myX.size();++i)
         for(unsigned j=0;j<globs.myY.size();++j) {
             globs.myVarX[i][j] = exp(2.0*(  beta*log(globs.myX[i])   
@@ -19,11 +20,21 @@ void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REA
 
 void setPayoff(const REAL strike, PrivGlobs& globs )
 {
-	for(unsigned i=0;i<globs.myX.size();++i)
+	
+    REAL payoff[globs.myX.size()];
+
+    #pragma omp parallel for default(shared) schedule(static)
+    for(unsigned i=0;i<globs.myX.size();++i) 
+    {
+        payoff[i] = max(globs.myX[i]-strike, (REAL)0.0);
+    }
+
+
+    #pragma omp parallel for collapse(2)
+    for(unsigned i=0;i<globs.myX.size();++i)
 	{
-		REAL payoff = max(globs.myX[i]-strike, (REAL)0.0);
 		for(unsigned j=0;j<globs.myY.size();++j)
-			globs.myResult[i][j] = payoff;
+			globs.myResult[i][j] = payoff[i];
 	}
 }
 
@@ -183,10 +194,11 @@ void   run_OrigCPU(
                 const REAL&           beta,
                       REAL*           res   // [outer] RESULT
 ) {
-    REAL strike;
-    PrivGlobs    globs(numX, numY, numT);
-
+    #pragma omp parallel for default(shared) schedule(static)
     for( unsigned i = 0; i < outer; ++ i ) {
+        REAL strike;
+        PrivGlobs    globs(numX, numY, numT);
+
         strike = 0.001*i;
         res[i] = value( globs, s0, strike, t,
                         alpha, nu,    beta,
