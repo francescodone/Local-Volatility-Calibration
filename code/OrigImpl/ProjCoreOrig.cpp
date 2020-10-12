@@ -93,6 +93,7 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     vector<REAL> yy(numZ);  // temporary used in tridag  // [max(numX,numY)]
 
     //	explicit x
+    #pragma omp parallel for collapse(2)
     for(i=0;i<numX;i++) {
         for(j=0;j<numY;j++) {
             u[j][i] = dtInv*globs.myResult[i][j];
@@ -111,6 +112,7 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     }
 
     //	explicit y
+    #pragma omp parallel for collapse(2)
     for(j=0;j<numY;j++)
     {
         for(i=0;i<numX;i++) {
@@ -130,16 +132,29 @@ rollback( const unsigned g, PrivGlobs& globs ) {
         }
     }
 
+
+    vector<vector<REAL> > a_cp(numY, vector<REAL>(numX));
+    vector<vector<REAL> > b_cp(numY, vector<REAL>(numX));
+    vector<vector<REAL> > c_cp(numY, vector<REAL>(numX));
+
     //	implicit x
+    #pragma omp parallel for collapse(2)
     for(j=0;j<numY;j++) {
         for(i=0;i<numX;i++) {  // here a, b,c should have size [numX]
-            a[i] =		 - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][0]);
-            b[i] = dtInv - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][1]);
-            c[i] =		 - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][2]);
+            a_cp[j][i] =		 - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][0]);
+            b_cp[j][i] = dtInv - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][1]);
+            c_cp[j][i] =		 - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][2]);
         }
-        // here yy should have size [numX]
-        tridagPar(a,b,c,u[j],numX,u[j],yy);
     }
+
+    #pragma omp parallel for default(shared) schedule(static)
+    for(j=0;j<numY;j++) {
+        // here yy should have size [numX]
+        vector<REAL> yy(numZ);
+        tridagPar(a_cp[j],b_cp[j],c_cp[j],u[j],numX,u[j],yy);
+    }
+
+
 
     //	implicit y
     for(i=0;i<numX;i++) { 
