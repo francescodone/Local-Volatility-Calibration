@@ -126,9 +126,9 @@ rollback( const unsigned g, PrivGlobs& globs ) {
         }
     }
 
-    vector<vector<REAL>> as1(numY, vector<REAL>(numX));
-    vector<vector<REAL>> bs1(numY, vector<REAL>(numX));
-    vector<vector<REAL>> cs1(numY, vector<REAL>(numX));
+    vector< vector<REAL> > as1(numY, vector<REAL>(numX));
+    vector< vector<REAL> > bs1(numY, vector<REAL>(numX));
+    vector< vector<REAL> > cs1(numY, vector<REAL>(numX));
     #pragma omp parallel for collapse(2) default(shared) schedule(static)
     for(j=0;j<numY;j++) {
         for(i=0;i<numX;i++) {
@@ -146,10 +146,10 @@ rollback( const unsigned g, PrivGlobs& globs ) {
         tridagPar(as1[j],bs1[j],cs1[j],u[j],numX,u[j],yy);
     }
 
-    vector<vector<REAL>> as2(numX, vector<REAL>(numY));
-    vector<vector<REAL>> bs2(numX, vector<REAL>(numY));
-    vector<vector<REAL>> cs2(numX, vector<REAL>(numY));
-    vector<vector<REAL>> ys2(numX, vector<REAL>(numY));
+    vector< vector<REAL> > as2(numX, vector<REAL>(numY));
+    vector< vector<REAL> > bs2(numX, vector<REAL>(numY));
+    vector< vector<REAL> > cs2(numX, vector<REAL>(numY));
+    vector< vector<REAL> > ys2(numX, vector<REAL>(numY));
     #pragma omp parallel for collapse(2) default(shared) schedule(static)
     for(i=0;i<numX;i++) { 
         for(j=0;j<numY;j++) {  // here a, b, c should have size [numY]
