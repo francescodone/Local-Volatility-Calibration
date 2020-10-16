@@ -132,6 +132,7 @@ struct LinFunComp {
 template<class OP>
 void inplaceScanInc(const int n, vector<typename OP::OpTp>& inpres) {
   typename OP::OpTp acc = inpres[0];
+  #pragma omp scan inclusive(inpres)
   for(int i=1; i<n; i++) {
     acc = OP::apply(acc,inpres[i]);
     inpres[i] = acc;    
@@ -156,11 +157,15 @@ inline void tridagPar(
     //--------------------------------------------------
     vector<MyReal4> mats(n);    // supposed to be in shared memory!
     REAL b0 = b[0];
+
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i=0; i<n; i++) { //parallel, map-like semantics
         if (i==0) { mats[i].x = 1.0;  mats[i].y = 0.0;          mats[i].z = 0.0; mats[i].w = 1.0; }
         else      { mats[i].x = b[i]; mats[i].y = -a[i]*c[i-1]; mats[i].z = 1.0; mats[i].w = 0.0; }
     }
     inplaceScanInc<MatMult2b2>(n,mats);
+
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i=0; i<n; i++) { //parallel, map-like semantics
         uu[i] = (mats[i].x*b0 + mats[i].y) / (mats[i].z*b0 + mats[i].w);
     }
@@ -171,11 +176,14 @@ inline void tridagPar(
     //----------------------------------------------------
     vector<MyReal2> lfuns(n);
     REAL y0 = r[0];
+
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i=0; i<n; i++) { //parallel, map-like semantics
         if (i==0) { lfuns[0].x = 0.0;  lfuns[0].y = 1.0;           }
         else      { lfuns[i].x = r[i]; lfuns[i].y = -a[i]/uu[i-1]; }
     }
     inplaceScanInc<LinFunComp>(n,lfuns);
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i=0; i<n; i++) { //parallel, map-like semantics
         u[i] = lfuns[i].x + y0*lfuns[i].y;
     }
@@ -186,12 +194,14 @@ inline void tridagPar(
     //             scan with linear func comp operator  --
     //----------------------------------------------------
     REAL yn = u[n-1]/uu[n-1];
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i=0; i<n; i++) { //parallel, map-like semantics
         int k = n - i - 1;
         if (i==0) { lfuns[0].x = 0.0;  lfuns[0].y = 1.0;           }
         else      { lfuns[i].x = u[k]/uu[k]; lfuns[i].y = -c[k]/uu[k]; }
     }
     inplaceScanInc<LinFunComp>(n,lfuns);
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i=0; i<n; i++) { //parallel, map-like semantics
         u[n-i-1] = lfuns[i].x + yn*lfuns[i].y;
     }
