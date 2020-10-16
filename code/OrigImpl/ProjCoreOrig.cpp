@@ -184,6 +184,7 @@ REAL   value(   PrivGlobs    globs,
     initOperator(globs.myY,globs.myDyy);
 
     setPayoff(strike, globs);
+    #pragma omp parallel for default(shared) schedule(static)
     for(int i = globs.myTimeline.size()-2;i>=0;--i)
     {
         updateParams(i,alpha,beta,nu,globs);
