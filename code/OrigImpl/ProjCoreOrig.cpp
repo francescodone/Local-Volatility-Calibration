@@ -186,11 +186,39 @@ void   run_OrigCPU(
     REAL strike;
     PrivGlobs    globs(numX, numY, numT);
 
-    for( unsigned i = 0; i < outer; ++ i ) {
-        strike = 0.001*i;
-        res[i] = value( globs, s0, strike, t,
-                        alpha, nu,    beta,
-                        numX,  numY,  numT );
+    for( unsigned k = 0; k < outer; ++ k ) {
+      strike = 0.001*k;
+      initGrid(s0,alpha,nu,t, numX, numY, numT, globs);
+      initOperator(globs.myX,globs.myDxx);
+      initOperator(globs.myY,globs.myDyy);
+
+      // setPayoff
+      for(unsigned i=0;i<globs.myX.size();++i)
+      {
+          REAL payoff = max(globs.myX[i]-strike, (REAL)0.0);
+          for(unsigned j=0;j<globs.myY.size();++j)
+              globs.myResult[i][j] = payoff;
+      }
+
+      // value
+      for(int g = globs.myTimeline.size()-2;g>=0;--g)
+      {
+          // updateParams
+          for(unsigned i=0;i<globs.myX.size();++i)
+              for(unsigned j=0;j<globs.myY.size();++j) {
+                  globs.myVarX[i][j] = exp(2.0*(  beta*log(globs.myX[i])   
+                                                  + globs.myY[j]             
+                                                  - 0.5*nu*nu*globs.myTimeline[g] )
+                                          );
+                  globs.myVarY[i][j] = exp(2.0*(  alpha*log(globs.myX[i])   
+                                                  + globs.myY[j]             
+                                                  - 0.5*nu*nu*globs.myTimeline[g] )
+                                          ); // nu*nu
+              }
+          rollback(g, globs);
+      }
+
+      res[k] = globs.myResult[globs.myXindex][globs.myYindex];
     }
 }
 
