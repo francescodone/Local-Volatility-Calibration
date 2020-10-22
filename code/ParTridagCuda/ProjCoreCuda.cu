@@ -1,7 +1,7 @@
 #include <cuda_runtime.h>
 #include "TridagKernel.cu.h"
 #include "CoreKernel.cu.h"
-#include "../OrigImpl/ProjHelperFun.h"
+#include "ProjHelperFun.h"
 #include "Constants.h"
 #include "TridagPar.h"
 
@@ -146,7 +146,7 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     for(j=0;j<numY;j++) {
         // here yy should have size [numX]
         vector<REAL> yy(numX);
-        tridagPar(as1[j],bs1[j],cs1[j],u[j],numX,u[j],yy);
+        tridagPar(as1[j].data(),bs1[j].data(),cs1[j].data(),u[j].data(),numX,u[j].data(),yy.data());
     }
 
     vector< vector<REAL> > as2(numX, vector<REAL>(numY));
@@ -167,7 +167,7 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     for(i=0;i<numX;i++) { 
         // here yy should have size [numY]
         vector<REAL> yy(numY);
-        tridagPar(as2[i],bs2[i],cs2[i],ys2[i],numY,globs.myResult[i],yy);
+        tridagPar(as2[i].data(),bs2[i].data(),cs2[i].data(),ys2[i].data(),numY,globs.myResult[i].data(),yy.data());
     }
 }
 

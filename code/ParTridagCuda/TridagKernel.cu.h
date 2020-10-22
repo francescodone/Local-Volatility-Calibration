@@ -2,8 +2,8 @@
 #define SCAN_KERS
 
 #include <cuda_runtime.h>
-
-typedef float REAL;
+#include "Constants.h"
+//typedef float REAL;
 
 class MyReal2 {
   public:
