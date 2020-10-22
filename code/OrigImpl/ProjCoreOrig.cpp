@@ -1,7 +1,7 @@
 #include "ProjHelperFun.h"
 #include "Constants.h"
 #include "TridagPar.h"
-
+/*
 void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REAL nu, PrivGlobs& globs)
 {
     for(unsigned i=0;i<globs.myX.size();++i)
@@ -26,7 +26,8 @@ void setPayoff(const REAL strike, PrivGlobs& globs )
 			globs.myResult[i][j] = payoff;
 	}
 }
-
+*/
+/*
 inline void tridag(
     const vector<REAL>&   a,   // size [n]
     const vector<REAL>&   b,   // size [n]
@@ -63,12 +64,12 @@ inline void tridag(
     for(i=0; i<n; i++) u[i] = a[n-1-i];
 #endif
 }
-
+*/
 
 void
 rollback( const unsigned g, PrivGlobs& globs ) {
-    unsigned numX = globs.myX.size(),
-             numY = globs.myY.size();
+    unsigned numX = globs.sizeX,
+             numY = globs.sizeY;
 
     unsigned numZ = max(numX,numY);
 
@@ -76,10 +77,24 @@ rollback( const unsigned g, PrivGlobs& globs ) {
 
     REAL dtInv = 1.0/(globs.myTimeline[g+1]-globs.myTimeline[g]);
 
-    vector<vector<REAL> > u(numY, vector<REAL>(numX));   // [numY][numX]
-    vector<vector<REAL> > v(numX, vector<REAL>(numY));   // [numX][numY]
-    vector<REAL> a(numZ), b(numZ), c(numZ), y(numZ);     // [max(numX,numY)] 
-    vector<REAL> yy(numZ);  // temporary used in tridag  // [max(numX,numY)]
+    REAL** u = new REAL*[numY];
+    for (int idx = 0; idx<numY; idx++) {
+        u[idx] = new REAL[numX];
+    }
+    //(numY, vector<REAL>(numX));   // [numY][numX]
+
+    REAL** v = new REAL*[numX];
+    for (int idx = 0; idx<numX; idx++) {
+        v[idx] = new REAL[numY];
+    }
+    //vector<vector<REAL> > v(numX, vector<REAL>(numY));   // [numX][numY]
+    REAL* a = new REAL[numZ];
+    REAL* b = new REAL[numZ];
+    REAL* c = new REAL[numZ];
+    REAL* y = new REAL[numZ];
+    REAL* yy = new REAL[numZ];
+    //vector<REAL> a(numZ), b(numZ), c(numZ), y(numZ);     // [max(numX,numY)] 
+    //vector<REAL> yy(numZ);  // temporary used in tridag  // [max(numX,numY)]
 
     //	explicit x
     for(i=0;i<numX;i++) {
@@ -146,6 +161,7 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     }
 }
 
+/*
 REAL   value(   PrivGlobs    globs,
                 const REAL s0,
                 const REAL strike, 
@@ -170,6 +186,7 @@ REAL   value(   PrivGlobs    globs,
 
     return globs.myResult[globs.myXindex][globs.myYindex];
 }
+*/
 
 void   run_OrigCPU(  
                 const unsigned int&   outer,
@@ -188,24 +205,24 @@ void   run_OrigCPU(
 
     for( unsigned k = 0; k < outer; ++ k ) {
       strike = 0.001*k;
+      // value
       initGrid(s0,alpha,nu,t, numX, numY, numT, globs);
-      initOperator(globs.myX,globs.myDxx);
-      initOperator(globs.myY,globs.myDyy);
+      initOperator(globs.myX,globs.myDxx, globs.sizeX);
+      initOperator(globs.myY,globs.myDyy, globs.sizeY);
 
       // setPayoff
-      for(unsigned i=0;i<globs.myX.size();++i)
+      for(unsigned i=0;i<globs.sizeX;++i)
       {
           REAL payoff = max(globs.myX[i]-strike, (REAL)0.0);
-          for(unsigned j=0;j<globs.myY.size();++j)
+          for(unsigned j=0;j<globs.sizeY;++j)
               globs.myResult[i][j] = payoff;
       }
 
-      // value
-      for(int g = globs.myTimeline.size()-2;g>=0;--g)
+      for(int g = globs.sizeT-2;g>=0;--g)
       {
           // updateParams
-          for(unsigned i=0;i<globs.myX.size();++i)
-              for(unsigned j=0;j<globs.myY.size();++j) {
+          for(unsigned i=0;i<globs.sizeX;++i)
+              for(unsigned j=0;j<globs.sizeY;++j) {
                   globs.myVarX[i][j] = exp(2.0*(  beta*log(globs.myX[i])   
                                                   + globs.myY[j]             
                                                   - 0.5*nu*nu*globs.myTimeline[g] )
