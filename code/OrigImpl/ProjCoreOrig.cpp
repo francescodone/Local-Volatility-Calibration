@@ -1,7 +1,7 @@
 #include "ProjHelperFun.h"
 #include "Constants.h"
 #include "TridagPar.h"
-
+/*
 void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REAL nu, PrivGlobs& globs)
 {
     for(unsigned i=0;i<globs.myX.size();++i)
@@ -26,7 +26,8 @@ void setPayoff(const REAL strike, PrivGlobs& globs )
 			globs.myResult[i][j] = payoff;
 	}
 }
-
+*/
+/*
 inline void tridag(
     const vector<REAL>&   a,   // size [n]
     const vector<REAL>&   b,   // size [n]
@@ -63,38 +64,52 @@ inline void tridag(
     for(i=0; i<n; i++) u[i] = a[n-1-i];
 #endif
 }
-
+*/
 
 void
-rollback( const unsigned g, PrivGlobs& globs ) {
-    unsigned numX = globs.myX.size(),
-             numY = globs.myY.size();
+rollback( const unsigned g, const unsigned k, PrivGlobs& globs ) {
+    unsigned numX = globs.sizeX,
+             numY = globs.sizeY;
 
     unsigned numZ = max(numX,numY);
 
     unsigned i, j;
 
-    REAL dtInv = 1.0/(globs.myTimeline[g+1]-globs.myTimeline[g]);
+    REAL dtInv = 1.0/(globs.myTimeline[k][g+1]-globs.myTimeline[k][g]);
 
-    vector<vector<REAL> > u(numY, vector<REAL>(numX));   // [numY][numX]
-    vector<vector<REAL> > v(numX, vector<REAL>(numY));   // [numX][numY]
-    vector<REAL> a(numZ), b(numZ), c(numZ), y(numZ);     // [max(numX,numY)] 
-    vector<REAL> yy(numZ);  // temporary used in tridag  // [max(numX,numY)]
+    REAL** u = new REAL*[numY];
+    for (int idx = 0; idx<numY; idx++) {
+        u[idx] = new REAL[numX];
+    }
+    //(numY, vector<REAL>(numX));   // [numY][numX]
+
+    REAL** v = new REAL*[numX];
+    for (int idx = 0; idx<numX; idx++) {
+        v[idx] = new REAL[numY];
+    }
+    //vector<vector<REAL> > v(numX, vector<REAL>(numY));   // [numX][numY]
+    REAL* a = new REAL[numZ];
+    REAL* b = new REAL[numZ];
+    REAL* c = new REAL[numZ];
+    REAL* y = new REAL[numZ];
+    REAL* yy = new REAL[numZ];
+    //vector<REAL> a(numZ), b(numZ), c(numZ), y(numZ);     // [max(numX,numY)] 
+    //vector<REAL> yy(numZ);  // temporary used in tridag  // [max(numX,numY)]
 
     //	explicit x
     for(i=0;i<numX;i++) {
         for(j=0;j<numY;j++) {
-            u[j][i] = dtInv*globs.myResult[i][j];
+            u[j][i] = dtInv*globs.myResult[k][i][j];
 
             if(i > 0) { 
-              u[j][i] += 0.5*( 0.5*globs.myVarX[i][j]*globs.myDxx[i][0] ) 
-                            * globs.myResult[i-1][j];
+              u[j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0] ) 
+                            * globs.myResult[k][i-1][j];
             }
-            u[j][i]  +=  0.5*( 0.5*globs.myVarX[i][j]*globs.myDxx[i][1] )
-                            * globs.myResult[i][j];
+            u[j][i]  +=  0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1] )
+                            * globs.myResult[k][i][j];
             if(i < numX-1) {
-              u[j][i] += 0.5*( 0.5*globs.myVarX[i][j]*globs.myDxx[i][2] )
-                            * globs.myResult[i+1][j];
+              u[j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2] )
+                            * globs.myResult[k][i+1][j];
             }
         }
     }
@@ -106,14 +121,14 @@ rollback( const unsigned g, PrivGlobs& globs ) {
             v[i][j] = 0.0;
 
             if(j > 0) {
-              v[i][j] +=  ( 0.5*globs.myVarY[i][j]*globs.myDyy[j][0] )
-                         *  globs.myResult[i][j-1];
+              v[i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0] )
+                         *  globs.myResult[k][i][j-1];
             }
-            v[i][j]  +=   ( 0.5*globs.myVarY[i][j]*globs.myDyy[j][1] )
-                         *  globs.myResult[i][j];
+            v[i][j]  +=   ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1] )
+                         *  globs.myResult[k][i][j];
             if(j < numY-1) {
-              v[i][j] +=  ( 0.5*globs.myVarY[i][j]*globs.myDyy[j][2] )
-                         *  globs.myResult[i][j+1];
+              v[i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2] )
+                         *  globs.myResult[k][i][j+1];
             }
             u[j][i] += v[i][j]; 
         }
@@ -122,9 +137,9 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     //	implicit x
     for(j=0;j<numY;j++) {
         for(i=0;i<numX;i++) {  // here a, b,c should have size [numX]
-            a[i] =		 - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][0]);
-            b[i] = dtInv - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][1]);
-            c[i] =		 - 0.5*(0.5*globs.myVarX[i][j]*globs.myDxx[i][2]);
+            a[i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0]);
+            b[i] = dtInv - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1]);
+            c[i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2]);
         }
         // here yy should have size [numX]
         tridagPar(a,b,c,u[j],numX,u[j],yy);
@@ -133,19 +148,20 @@ rollback( const unsigned g, PrivGlobs& globs ) {
     //	implicit y
     for(i=0;i<numX;i++) { 
         for(j=0;j<numY;j++) {  // here a, b, c should have size [numY]
-            a[j] =		 - 0.5*(0.5*globs.myVarY[i][j]*globs.myDyy[j][0]);
-            b[j] = dtInv - 0.5*(0.5*globs.myVarY[i][j]*globs.myDyy[j][1]);
-            c[j] =		 - 0.5*(0.5*globs.myVarY[i][j]*globs.myDyy[j][2]);
+            a[j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0]);
+            b[j] = dtInv - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1]);
+            c[j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2]);
         }
 
         for(j=0;j<numY;j++)
             y[j] = dtInv*u[j][i] - 0.5*v[i][j];
 
         // here yy should have size [numY]
-        tridagPar(a,b,c,y,numY,globs.myResult[i],yy);
+        tridagPar(a,b,c,y,numY,globs.myResult[k][i],yy);
     }
 }
 
+/*
 REAL   value(   PrivGlobs    globs,
                 const REAL s0,
                 const REAL strike, 
@@ -170,6 +186,7 @@ REAL   value(   PrivGlobs    globs,
 
     return globs.myResult[globs.myXindex][globs.myYindex];
 }
+*/
 
 void   run_OrigCPU(  
                 const unsigned int&   outer,
@@ -183,14 +200,42 @@ void   run_OrigCPU(
                 const REAL&           beta,
                       REAL*           res   // [outer] RESULT
 ) {
-    REAL strike;
-    PrivGlobs    globs(numX, numY, numT);
+    REAL* strike = new REAL[outer];
+    PrivGlobs    globs(numX, numY, numT, outer);
 
-    for( unsigned i = 0; i < outer; ++ i ) {
-        strike = 0.001*i;
-        res[i] = value( globs, s0, strike, t,
-                        alpha, nu,    beta,
-                        numX,  numY,  numT );
+    for( unsigned k = 0; k < outer; ++ k ) {
+      strike[k] = 0.001*k;
+      // value
+      initGrid(s0,alpha,nu,t, numX, numY, numT, k, globs);
+      initOperator(globs.myX,globs.myDxx, globs.sizeX, k);
+      initOperator(globs.myY,globs.myDyy, globs.sizeY, k);
+
+      // setPayoff
+      for(unsigned i=0;i<globs.sizeX;++i)
+      {
+          REAL payoff = max(globs.myX[k][i]-strike[k], (REAL)0.0);
+          for(unsigned j=0;j<globs.sizeY;++j)
+              globs.myResult[k][i][j] = payoff;
+      }
+
+      for(int g = globs.sizeT-2;g>=0;--g)
+      {
+          // updateParams
+          for(unsigned i=0;i<globs.sizeX;++i)
+              for(unsigned j=0;j<globs.sizeY;++j) {
+                  globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k][i])
+                                                     + globs.myY[k][j]
+                                                     - 0.5*nu*nu*globs.myTimeline[k][g] )
+                                          );
+                  globs.myVarY[k][i][j] = exp(2.0*(  alpha*log(globs.myX[k][i])
+                                                     + globs.myY[k][j]
+                                                     - 0.5*nu*nu*globs.myTimeline[k][g] )
+                                          ); // nu*nu
+              }
+          rollback(g, k, globs);
+      }
+
+      res[k] = globs.myResult[k][globs.myXindex[k]][globs.myYindex[k]];
     }
 }
 

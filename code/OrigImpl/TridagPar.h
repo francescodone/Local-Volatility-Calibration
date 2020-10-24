@@ -139,13 +139,13 @@ void inplaceScanInc(const int n, vector<typename OP::OpTp>& inpres) {
 }
 
 inline void tridagPar(
-    const vector<REAL>&   a,   // size [n]
-    const vector<REAL>&   b,   // size [n]
-    const vector<REAL>&   c,   // size [n]
-    const vector<REAL>&   r,   // size [n]
+    const REAL*   a,   // size [n]
+    const REAL*   b,   // size [n]
+    const REAL*   c,   // size [n]
+    const REAL*   r,   // size [n]
     const int             n,
-          vector<REAL>&   u,   // size [n]
-          vector<REAL>&   uu   // size [n] temporary
+          REAL*   u,   // size [n]
+          REAL*   uu   // size [n] temporary
 ) {
     int i, offset;
 
@@ -167,7 +167,7 @@ inline void tridagPar(
     // b -> uu
     //----------------------------------------------------
     // Recurrence 2: y[i] = y[i] - (a[i]/b[i-1])*y[i-1] --
-    //   solved by scan with linear func comp operator  --
+    //   solved by scan with linear func comp boperator  --
     //----------------------------------------------------
     vector<MyReal2> lfuns(n);
     REAL y0 = r[0];

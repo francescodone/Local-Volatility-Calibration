@@ -13,22 +13,27 @@ using namespace std;
 struct PrivGlobs {
 
     //	grid
-    vector<REAL>        myX;        // [numX]
-    vector<REAL>        myY;        // [numY]
-    vector<REAL>        myTimeline; // [numT]
-    unsigned            myXindex;  
-    unsigned            myYindex;
+    REAL**     myX;        // [outer][numX]
+    REAL**     myY;        // [outer][numY]
+    REAL**     myTimeline; // [outer][numT]
+    unsigned*  myXindex;   // [outer]
+    unsigned*  myYindex;   // [outer]
 
     //	variable
-    vector<vector<REAL> > myResult; // [numX][numY]
+    REAL*** myResult; // [outer][numX][numY]
 
     //	coeffs
-    vector<vector<REAL> >   myVarX; // [numX][numY]
-    vector<vector<REAL> >   myVarY; // [numX][numY]
+    REAL***   myVarX; // [outer][numX][numY]
+    REAL***   myVarY; // [outer][numX][numY]
 
     //	operators
-    vector<vector<REAL> >   myDxx;  // [numX][4]
-    vector<vector<REAL> >   myDyy;  // [numY][4]
+    REAL***   myDxx;  // [outer][numX][4]
+    REAL***   myDyy;  // [outer][numY][4]
+
+    unsigned sizeX;
+    unsigned sizeY;
+    unsigned sizeT;
+    unsigned sizeO;
 
     PrivGlobs( ) {
         printf("Invalid Contructor: need to provide the array sizes! EXITING...!\n");
@@ -37,40 +42,74 @@ struct PrivGlobs {
 
     PrivGlobs(  const unsigned int& numX,
                 const unsigned int& numY,
-                const unsigned int& numT ) {
-        this->  myX.resize(numX);
-        this->myDxx.resize(numX);
-        for(int k=0; k<numX; k++) {
-            this->myDxx[k].resize(4);
+                const unsigned int& numT,
+                const unsigned int& outer
+             ) {
+        this->myXindex = new unsigned[outer];
+        this->myYindex = new unsigned[outer];
+
+        this->myX = new REAL*[outer];
+        for(int k=0; k<outer; k++) {
+            this->myX[k] = new REAL[numX];
         }
 
-        this->  myY.resize(numY);
-        this->myDyy.resize(numY);
-        for(int k=0; k<numY; k++) {
-            this->myDyy[k].resize(4);
+        this->myDxx = new REAL**[outer];
+        for(int k=0; k<outer; k++) {
+            this->myDxx[k] = new REAL*[numX];
+            for(int l=0; l<numX; l++) {
+                this->myDxx[k][l] = new REAL[4];
+            }
         }
 
-        this->myTimeline.resize(numT);
-
-        this->  myVarX.resize(numX);
-        this->  myVarY.resize(numX);
-        this->myResult.resize(numX);
-        for(unsigned i=0;i<numX;++i) {
-            this->  myVarX[i].resize(numY);
-            this->  myVarY[i].resize(numY);
-            this->myResult[i].resize(numY);
+        this->myY = new REAL*[outer];
+        for(int k=0; k<outer; k++) {
+            this->myY[k] = new REAL[numY];
         }
 
+        this->myDyy = new REAL**[outer];
+        for(int k=0; k<outer; k++) {
+            this->myDyy[k] = new REAL*[numY];
+            for(int l=0; l<numY; l++) {
+                this->myDyy[k][l] = new REAL[4];
+            }
+        }
+
+        //this->myTimeline = new REAL[numT];
+        this->myTimeline = new REAL*[outer];
+        for(int k=0; k<outer; k++) {
+            this->myTimeline[k] = new REAL[numT];
+        }
+
+        this->myVarX = new REAL**[outer];
+        this->myVarY = new REAL**[outer];
+        this->myResult = new REAL**[outer];
+        
+        for(int k=0; k<outer; k++) {
+            this->  myVarX[k] = new REAL*[numX];
+            this->  myVarY[k] = new REAL*[numX];
+            this->myResult[k] = new REAL*[numX];
+            for(unsigned i=0;i<numX;++i) {
+                this->  myVarX[k][i] = new REAL[numY];
+                this->  myVarY[k][i] = new REAL[numY];
+                this->myResult[k][i] = new REAL[numY];
+            }
+        }
+        this->sizeX = numX;
+        this->sizeY = numY;
+        this->sizeT = numT;
+        this->sizeO = outer;
     }
 } __attribute__ ((aligned (128)));
 
 
 void initGrid(  const REAL s0, const REAL alpha, const REAL nu,const REAL t, 
-                const unsigned numX, const unsigned numY, const unsigned numT, PrivGlobs& globs   
+                const unsigned numX, const unsigned numY, const unsigned numT, const unsigned outer, PrivGlobs& globs   
             );
 
-void initOperator(  const vector<REAL>& x, 
-                    vector<vector<REAL> >& Dxx
+void initOperator(  REAL** x, 
+                    REAL*** Dxx,
+                    unsigned xsize,
+                    unsigned k
                  );
 
 void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REAL nu, PrivGlobs& globs);
