@@ -52,7 +52,7 @@ void tridagCUDAWrapper( const unsigned int block_size,
     }
     num_blocks = (n + (block_size - 1)) / block_size;
     TRIDAG_SOLVER<<< num_blocks, block_size, sh_mem_size >>>(a, b, c, r, n, sgm_sz, u, uu);
-    cudaThreadSynchronize();
+    cudaDeviceSynchronize();
 }
 
 /**

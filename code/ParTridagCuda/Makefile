@@ -1,4 +1,4 @@
-CXX        = nvcc
+CXX        = nvcc -O3 -arch=compute_35
 
 SOURCES_CPP =TestCudaTridag.cu
 HELPERS     =TridagPar.h TridagKernel.cu.h

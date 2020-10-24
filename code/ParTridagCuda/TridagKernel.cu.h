@@ -3,7 +3,7 @@
 
 #include <cuda_runtime.h>
 
-typedef float REAL;
+// typedef float REAL;
 
 class MyReal2 {
   public:
