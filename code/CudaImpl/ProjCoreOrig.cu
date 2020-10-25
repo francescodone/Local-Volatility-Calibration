@@ -195,24 +195,8 @@ __global__ void initPayoff(int outer, int numX, REAL* payoff_cuda, REAL* myX, RE
     int gidx = blockIdx.x*blockDim.x + threadIdx.x;
     int gidy = blockIdx.y*blockDim.y + threadIdx.y;
 
-    if (gidy == 0 && gidx == 0) {
-        printf("%f\n", myX[gidy*numX+gidx]);
-    }
-    if (gidy == 1 && gidx == 2) {
-        printf("%f\n", myX[gidy*numX+gidx]);
-    }
-    if (gidy == 1 && gidx == 1) {
-        printf("%f\n", myX[gidy*numX+gidx]);
-    }
-    if (gidy == 2 && gidx == 2) {
-        printf("%f\n", myX[gidy*numX+gidx]);
-    }
-
     if (gidy <= outer && gidx <= numX) {
-        //payoff[k][i] = max(globs.myX[k][i]-strike[k], (REAL)0.0);
-        // printf("%d\n", gidy*numX+gidx);
         payoff_cuda[gidy*numX+gidx] = max(myX[gidy*numX+gidx]-strike[gidy], (REAL)0.0);
-        // printf("%f.6\n", max(myX[gidy*numX+gidx]-strike[gidy], (REAL)0.0));
     }
 }
 
@@ -230,6 +214,16 @@ void   run_OrigCPU(
 ) {
 
      // printf("START");
+
+    // calculating cuda dim
+    
+    int block_size = 32;
+
+    dim3 block(block_size, block_size, 1);
+
+    int  dim_outer = ceil( ((float) outer)/block_size ); 
+    int  dim_x = ceil( ((float) numX)/block_size );
+    int  dim_y = ceil( ((float) numY)/block_size );
 
     // ----- ARRAY EXPNASION ------
 
@@ -253,7 +247,6 @@ void   run_OrigCPU(
         }
     }
 
-    REAL** payoff = new REAL*[outer];
     REAL** a = new REAL*[outer];
     REAL** b = new REAL*[outer];
     REAL** c = new REAL*[outer];
@@ -261,7 +254,6 @@ void   run_OrigCPU(
     REAL** yy = new REAL*[outer];
 
     for(int k=0; k<outer; k++) {
-        payoff[k] = new REAL[numX];
         a[k] = new REAL[numZ];
         b[k] = new REAL[numZ];
         c[k] = new REAL[numZ];
@@ -281,66 +273,38 @@ void   run_OrigCPU(
       initOperator(globs.myY,globs.myDyy, globs.sizeY, k, numY);
     }
 
-    // --- setPayoff ----
 
-    // cuda
+    // --- beginning of setPayoff - cuda ----
 
-    // REAL* d_payoff;
-    // REAL* d_strike;
-    // REAL* d_myX;
-    // cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
-    // cudaMalloc((void**) &d_strike, outer * sizeof(REAL));
-    // cudaMalloc(&d_myX, outer * numX * sizeof(REAL));
+    REAL *d_payoff, *d_strike, *d_myX;
+    cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
+    cudaMalloc((void**) &d_strike, outer * sizeof(REAL));
+    cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
 
-    // printf("%f\n", globs.myX[0]);
-    // printf("%f\n", globs.myX[1][1]);
-    // printf("%f\n", globs.myX[0][0]);
+    cudaMemcpy(d_strike, strike, outer * sizeof(REAL), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
 
-    // cudaMemcpy(d_strike, strike, outer * sizeof(REAL), cudaMemcpyHostToDevice);
-    // cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
+    dim3 grid (dim_x, dim_outer, 1);
+    initPayoff<<<grid, block>>>(outer, numX, d_payoff, d_myX, d_strike);
+    cudaDeviceSynchronize();
 
-    // // printf("%f\n", d_myX[5]);
-
-    // dim3 block(numX, outer, 1);
-    // dim3 grid (1, 1, 1);
-    
-    // printf("Init payoff start");
-
-    // initPayoff<<<grid, block>>>(outer, numX, d_payoff, d_myX, d_strike);
-    // cudaDeviceSynchronize();
-
-    // // printf("Init payoff end");
-
-    // REAL* h_payoff = (REAL*) malloc(outer * numX * sizeof(REAL));
-    // cudaMemcpy(h_payoff, d_payoff, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
-
-    // for( unsigned k = 0; k < outer; ++ k ) {
-    //     for(unsigned i=0;i<globs.sizeX;++i) {
-    //         for(unsigned j=0;j<globs.sizeY;++j)
-    //             globs.myResult[k][i][j] = h_payoff[k*numX+i];
-    //     }
-    // }
-
-    // cudaFree(d_payoff);
-    // cudaFree(d_strike);
-    // cudaFree(d_myX);
-    // // free(h_payoff);
-
-    // cpu
-
-
-    for( unsigned k = 0; k < outer; ++ k ) {
-        for(unsigned i=0;i<globs.sizeX;++i) {
-            payoff[k][i] = max(globs.myX[k*numX+i]-strike[k], (REAL)0.0);
-        }
-    }
+    REAL* h_payoff = (REAL*) malloc(outer * numX * sizeof(REAL));
+    cudaMemcpy(h_payoff, d_payoff, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
 
     for( unsigned k = 0; k < outer; ++ k ) {
         for(unsigned i=0;i<globs.sizeX;++i) {
             for(unsigned j=0;j<globs.sizeY;++j)
-                globs.myResult[k][i][j] = payoff[k][i];
+                globs.myResult[k][i][j] = h_payoff[k*numX+i];
         }
     }
+
+    cudaFree(d_payoff);
+    cudaFree(d_strike);
+    cudaFree(d_myX);
+    free(h_payoff);
+
+    // --- end of setPayoff - cuda ----
+
 
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
