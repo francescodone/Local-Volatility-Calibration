@@ -20,7 +20,7 @@ struct PrivGlobs {
     unsigned*  myYindex;   // [outer]
 
     //	variable
-    REAL*** myResult; // [outer][numX][numY]
+    REAL* myResult; // [outer][numX][numY]
 
     //	coeffs
     REAL***   myVarX; // [outer][numX][numY]
@@ -75,16 +75,15 @@ struct PrivGlobs {
 
         this->myVarX = new REAL**[outer];
         this->myVarY = new REAL**[outer];
-        this->myResult = new REAL**[outer];
+        this->myResult = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
+
         
         for(int k=0; k<outer; k++) {
             this->  myVarX[k] = new REAL*[numX];
             this->  myVarY[k] = new REAL*[numX];
-            this->myResult[k] = new REAL*[numX];
             for(unsigned i=0;i<numX;++i) {
                 this->  myVarX[k][i] = new REAL[numY];
                 this->  myVarY[k][i] = new REAL[numY];
-                this->myResult[k][i] = new REAL[numY];
             }
         }
         this->sizeX = numX;
