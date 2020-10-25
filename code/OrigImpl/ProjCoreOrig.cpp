@@ -263,9 +263,8 @@ void   run_OrigCPU(
 
     for( unsigned k = 0; k < outer; ++ k ) {
         for(unsigned i=0;i<globs.sizeX;++i) {
-            REAL payoff = max(globs.myX[k][i]-strike[k], (REAL)0.0);
             for(unsigned j=0;j<globs.sizeY;++j)
-                globs.myResult[k][i][j] = payoff;
+                globs.myResult[k][i][j] = payoff[k][i];
         }
     }
 
