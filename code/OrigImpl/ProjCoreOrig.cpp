@@ -202,11 +202,13 @@ void   run_OrigCPU(
                 const REAL&           beta,
                       REAL*           res   // [outer] RESULT
 ) {
-    REAL* strike = new REAL[outer];
+
+    // ----- ARRAY EXPNASION ------
+
     PrivGlobs    globs(numX, numY, numT, outer);
     unsigned numZ = max(numX,numY);
 
-    
+    REAL* strike = new REAL[outer];
     REAL*** u = new REAL**[outer];
     REAL*** v = new REAL**[outer];
     
@@ -221,6 +223,7 @@ void   run_OrigCPU(
         }
     }
 
+    REAL** payoff = new REAL*[outer];
     REAL** a = new REAL*[outer];
     REAL** b = new REAL*[outer];
     REAL** c = new REAL*[outer];
@@ -228,12 +231,16 @@ void   run_OrigCPU(
     REAL** yy = new REAL*[outer];
 
     for(int k=0; k<outer; k++) {
+        payoff[k] = new REAL[numX];
         a[k] = new REAL[numZ];
         b[k] = new REAL[numZ];
         c[k] = new REAL[numZ];
         y[k] = new REAL[numZ];
         yy[k] = new REAL[numZ];
     }
+
+    
+    // ----- MAIN LOOP ------
 
 
     for( unsigned k = 0; k < outer; ++ k ) {
@@ -242,31 +249,45 @@ void   run_OrigCPU(
       initGrid(s0,alpha,nu,t, numX, numY, numT, k, globs);
       initOperator(globs.myX,globs.myDxx, globs.sizeX, k);
       initOperator(globs.myY,globs.myDyy, globs.sizeY, k);
+    }
 
-      // setPayoff
-      for(unsigned i=0;i<globs.sizeX;++i)
-      {
-          REAL payoff = max(globs.myX[k][i]-strike[k], (REAL)0.0);
-          for(unsigned j=0;j<globs.sizeY;++j)
-              globs.myResult[k][i][j] = payoff;
-      }
+    // --- setPayoff ----
 
-      for(int g = globs.sizeT-2;g>=0;--g)
-      {
-          // updateParams
-          for(unsigned i=0;i<globs.sizeX;++i)
-              for(unsigned j=0;j<globs.sizeY;++j) {
-                  globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k][i])
+    for( unsigned k = 0; k < outer; ++ k ) {
+        for(unsigned i=0;i<globs.sizeX;++i) {
+            payoff[k][i] = max(globs.myX[k][i]-strike[k], (REAL)0.0);
+        }
+    }
+
+    for( unsigned k = 0; k < outer; ++ k ) {
+        for(unsigned i=0;i<globs.sizeX;++i) {
+            REAL payoff = max(globs.myX[k][i]-strike[k], (REAL)0.0);
+            for(unsigned j=0;j<globs.sizeY;++j)
+                globs.myResult[k][i][j] = payoff;
+        }
+    }
+
+
+    for( unsigned k = 0; k < outer; ++ k ) { // par
+        for(int g = globs.sizeT-2;g>=0;--g) { // seq
+            
+            
+            // --- updateParams ---
+            for(unsigned i=0;i<globs.sizeX;++i) {
+                for(unsigned j=0;j<globs.sizeY;++j) {
+                    globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k][i])
                                                      + globs.myY[k][j]
                                                      - 0.5*nu*nu*globs.myTimeline[k][g] )
                                           );
-                  globs.myVarY[k][i][j] = exp(2.0*(  alpha*log(globs.myX[k][i])
+                    globs.myVarY[k][i][j] = exp(2.0*(  alpha*log(globs.myX[k][i])
                                                      + globs.myY[k][j]
                                                      - 0.5*nu*nu*globs.myTimeline[k][g] )
                                           ); // nu*nu
-              }
+                }
+            }
 
-        // rollback
+
+        // --- rollback ---
 
         REAL dtInv = 1.0/(globs.myTimeline[k][g+1]-globs.myTimeline[k][g]);
 
@@ -289,8 +310,7 @@ void   run_OrigCPU(
         }
 
         //	explicit y
-        for(unsigned j=0;j<numY;j++)
-        {
+        for(unsigned j=0;j<numY;j++) {
             for(unsigned i=0;i<numX;i++) {
                 v[k][i][j] = 0.0;
 
@@ -335,9 +355,12 @@ void   run_OrigCPU(
         }
 
       }
+    }
 
+    for( unsigned k = 0; k < outer; ++ k ) { 
       res[k] = globs.myResult[k][globs.myXindex[k]][globs.myYindex[k]];
     }
+    
 }
 
 //#endif // PROJ_CORE_ORIG
