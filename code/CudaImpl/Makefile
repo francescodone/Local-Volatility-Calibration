@@ -1,4 +1,4 @@
-CXX        = nvcc -O3 -arch=compute_35
+CXX        = nvcc
 
 INCLUDES    += -I ../include
 GPU_OPTS   = -D lgWARP=5

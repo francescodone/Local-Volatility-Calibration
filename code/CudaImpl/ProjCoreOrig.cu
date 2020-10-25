@@ -1,6 +1,7 @@
 #include "ProjHelperFun.cu.h"
 #include "Constants.h"
 #include "TridagPar.cu.h"
+
 /*
 void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REAL nu, PrivGlobs& globs)
 {
@@ -190,6 +191,31 @@ REAL   value(   PrivGlobs    globs,
 }
 */
 
+__global__ void initPayoff(int outer, int numX, REAL* payoff_cuda, REAL* myX, REAL* strike) {
+    int gidx = blockIdx.x*blockDim.x + threadIdx.x;
+    int gidy = blockIdx.y*blockDim.y + threadIdx.y;
+
+    if (gidy == 0 && gidx == 0) {
+        printf("%f\n", myX[gidy*numX+gidx]);
+    }
+    if (gidy == 1 && gidx == 2) {
+        printf("%f\n", myX[gidy*numX+gidx]);
+    }
+    if (gidy == 1 && gidx == 1) {
+        printf("%f\n", myX[gidy*numX+gidx]);
+    }
+    if (gidy == 2 && gidx == 2) {
+        printf("%f\n", myX[gidy*numX+gidx]);
+    }
+
+    if (gidy <= outer && gidx <= numX) {
+        //payoff[k][i] = max(globs.myX[k][i]-strike[k], (REAL)0.0);
+        // printf("%d\n", gidy*numX+gidx);
+        payoff_cuda[gidy*numX+gidx] = max(myX[gidy*numX+gidx]-strike[gidy], (REAL)0.0);
+        // printf("%f.6\n", max(myX[gidy*numX+gidx]-strike[gidy], (REAL)0.0));
+    }
+}
+
 void   run_OrigCPU(  
                 const unsigned int&   outer,
                 const unsigned int&   numX,
@@ -202,6 +228,8 @@ void   run_OrigCPU(
                 const REAL&           beta,
                       REAL*           res   // [outer] RESULT
 ) {
+
+     // printf("START");
 
     // ----- ARRAY EXPNASION ------
 
@@ -249,15 +277,61 @@ void   run_OrigCPU(
       strike[k] = 0.001*k;
       // value
       initGrid(s0,alpha,nu,t, numX, numY, numT, k, globs);
-      initOperator(globs.myX,globs.myDxx, globs.sizeX, k);
-      initOperator(globs.myY,globs.myDyy, globs.sizeY, k);
+      initOperator(globs.myX,globs.myDxx, globs.sizeX, k, numX);
+      initOperator(globs.myY,globs.myDyy, globs.sizeY, k, numY);
     }
 
     // --- setPayoff ----
 
+    // cuda
+
+    // REAL* d_payoff;
+    // REAL* d_strike;
+    // REAL* d_myX;
+    // cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
+    // cudaMalloc((void**) &d_strike, outer * sizeof(REAL));
+    // cudaMalloc(&d_myX, outer * numX * sizeof(REAL));
+
+    // printf("%f\n", globs.myX[0]);
+    // printf("%f\n", globs.myX[1][1]);
+    // printf("%f\n", globs.myX[0][0]);
+
+    // cudaMemcpy(d_strike, strike, outer * sizeof(REAL), cudaMemcpyHostToDevice);
+    // cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
+
+    // // printf("%f\n", d_myX[5]);
+
+    // dim3 block(numX, outer, 1);
+    // dim3 grid (1, 1, 1);
+    
+    // printf("Init payoff start");
+
+    // initPayoff<<<grid, block>>>(outer, numX, d_payoff, d_myX, d_strike);
+    // cudaDeviceSynchronize();
+
+    // // printf("Init payoff end");
+
+    // REAL* h_payoff = (REAL*) malloc(outer * numX * sizeof(REAL));
+    // cudaMemcpy(h_payoff, d_payoff, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+    // for( unsigned k = 0; k < outer; ++ k ) {
+    //     for(unsigned i=0;i<globs.sizeX;++i) {
+    //         for(unsigned j=0;j<globs.sizeY;++j)
+    //             globs.myResult[k][i][j] = h_payoff[k*numX+i];
+    //     }
+    // }
+
+    // cudaFree(d_payoff);
+    // cudaFree(d_strike);
+    // cudaFree(d_myX);
+    // // free(h_payoff);
+
+    // cpu
+
+
     for( unsigned k = 0; k < outer; ++ k ) {
         for(unsigned i=0;i<globs.sizeX;++i) {
-            payoff[k][i] = max(globs.myX[k][i]-strike[k], (REAL)0.0);
+            payoff[k][i] = max(globs.myX[k*numX+i]-strike[k], (REAL)0.0);
         }
     }
 
@@ -276,12 +350,12 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<globs.sizeX;++i) {
                 for(unsigned j=0;j<globs.sizeY;++j) {
-                    globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k][i])
-                                                     + globs.myY[k][j]
+                    globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k*numX+i])
+                                                     + globs.myY[k*numY+j]
                                                      - 0.5*nu*nu*globs.myTimeline[k][g] )
                                           );
-                    globs.myVarY[k][i][j] = exp(2.0*(  alpha*log(globs.myX[k][i])
-                                                     + globs.myY[k][j]
+                    globs.myVarY[k][i][j] = exp(2.0*(  alpha*log(globs.myX[k*numX+i])
+                                                     + globs.myY[k*numY+j]
                                                      - 0.5*nu*nu*globs.myTimeline[k][g] )
                                           ); // nu*nu
                 }

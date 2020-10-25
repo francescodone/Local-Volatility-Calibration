@@ -13,8 +13,8 @@ using namespace std;
 struct PrivGlobs {
 
     //	grid
-    REAL**     myX;        // [outer][numX]
-    REAL**     myY;        // [outer][numY]
+    REAL*      myX;        // [outer][numX]
+    REAL*      myY;        // [outer][numY]
     REAL**     myTimeline; // [outer][numT]
     unsigned*  myXindex;   // [outer]
     unsigned*  myYindex;   // [outer]
@@ -48,10 +48,8 @@ struct PrivGlobs {
         this->myXindex = new unsigned[outer];
         this->myYindex = new unsigned[outer];
 
-        this->myX = new REAL*[outer];
-        for(int k=0; k<outer; k++) {
-            this->myX[k] = new REAL[numX];
-        }
+        this->myX = (REAL*) malloc(outer*numX*sizeof(REAL));
+        this->myY = (REAL*) malloc(outer*numY*sizeof(REAL));
 
         this->myDxx = new REAL**[outer];
         for(int k=0; k<outer; k++) {
@@ -59,11 +57,6 @@ struct PrivGlobs {
             for(int l=0; l<numX; l++) {
                 this->myDxx[k][l] = new REAL[4];
             }
-        }
-
-        this->myY = new REAL*[outer];
-        for(int k=0; k<outer; k++) {
-            this->myY[k] = new REAL[numY];
         }
 
         this->myDyy = new REAL**[outer];
@@ -106,10 +99,11 @@ void initGrid(  const REAL s0, const REAL alpha, const REAL nu,const REAL t,
                 const unsigned numX, const unsigned numY, const unsigned numT, const unsigned outer, PrivGlobs& globs   
             );
 
-void initOperator(  REAL** x, 
+void initOperator(  REAL* x, 
                     REAL*** Dxx,
                     unsigned xsize,
-                    unsigned k
+                    unsigned k,
+                    int row_s
                  );
 
 void updateParams(const unsigned g, const REAL alpha, const REAL beta, const REAL nu, PrivGlobs& globs);
