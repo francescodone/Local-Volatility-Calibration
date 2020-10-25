@@ -268,8 +268,8 @@ void   run_OrigCPU(
     }
 
 
-    for( unsigned k = 0; k < outer; ++ k ) { // par
-        for(int g = globs.sizeT-2;g>=0;--g) { // seq
+    for(int g = globs.sizeT-2;g>=0;--g) { // seq
+        for( unsigned k = 0; k < outer; ++ k ) { // par
             
             
             // --- updateParams ---
@@ -360,7 +360,7 @@ void   run_OrigCPU(
     for( unsigned k = 0; k < outer; ++ k ) { 
       res[k] = globs.myResult[k][globs.myXindex[k]][globs.myYindex[k]];
     }
-    
+
 }
 
 //#endif // PROJ_CORE_ORIG
