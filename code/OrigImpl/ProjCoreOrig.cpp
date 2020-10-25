@@ -209,6 +209,8 @@ void   run_OrigCPU(
     unsigned numZ = max(numX,numY);
 
     REAL* strike = new REAL[outer];
+    REAL* dtInv = new REAL[outer];
+
     REAL*** u = new REAL**[outer];
     REAL*** v = new REAL**[outer];
     
@@ -269,10 +271,10 @@ void   run_OrigCPU(
 
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
-        for( unsigned k = 0; k < outer; ++ k ) { // par
-            
-            
-            // --- updateParams ---
+
+
+        // --- updateParams ---    
+        for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<globs.sizeX;++i) {
                 for(unsigned j=0;j<globs.sizeY;++j) {
                     globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k][i])
@@ -285,76 +287,80 @@ void   run_OrigCPU(
                                           ); // nu*nu
                 }
             }
-
+        }
 
         // --- rollback ---
 
-        REAL dtInv = 1.0/(globs.myTimeline[k][g+1]-globs.myTimeline[k][g]);
-
-        //	explicit x
-        for(unsigned i=0;i<numX;i++) {
-            for(unsigned j=0;j<numY;j++) {
-                u[k][j][i] = dtInv*globs.myResult[k][i][j];
-
-                if(i > 0) { 
-                u[k][j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0] ) 
-                                * globs.myResult[k][i-1][j];
-                }
-                u[k][j][i]  +=  0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1] )
-                                * globs.myResult[k][i][j];
-                if(i < numX-1) {
-                u[k][j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2] )
-                                * globs.myResult[k][i+1][j];
-                }
-            }
+        for( unsigned k = 0; k < outer; ++ k ) {
+            dtInv[k] = 1.0/(globs.myTimeline[k][g+1]-globs.myTimeline[k][g]);
         }
 
-        //	explicit y
-        for(unsigned j=0;j<numY;j++) {
+        for( unsigned k = 0; k < outer; ++ k ) {
+
+            //	explicit x
             for(unsigned i=0;i<numX;i++) {
-                v[k][i][j] = 0.0;
+                for(unsigned j=0;j<numY;j++) {
+                    u[k][j][i] = dtInv[k]*globs.myResult[k][i][j];
 
-                if(j > 0) {
-                v[k][i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0] )
-                            *  globs.myResult[k][i][j-1];
+                    if(i > 0) { 
+                    u[k][j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0] ) 
+                                    * globs.myResult[k][i-1][j];
+                    }
+                    u[k][j][i]  +=  0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1] )
+                                    * globs.myResult[k][i][j];
+                    if(i < numX-1) {
+                        u[k][j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2] )
+                                        * globs.myResult[k][i+1][j];
+                    }
                 }
-                v[k][i][j]  +=   ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1] )
-                            *  globs.myResult[k][i][j];
-                if(j < numY-1) {
-                v[k][i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2] )
-                            *  globs.myResult[k][i][j+1];
+            }
+
+            //	explicit y
+            for(unsigned j=0;j<numY;j++) {
+                for(unsigned i=0;i<numX;i++) {
+                    v[k][i][j] = 0.0;
+
+                    if(j > 0) {
+                    v[k][i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0] )
+                                *  globs.myResult[k][i][j-1];
+                    }
+                    v[k][i][j]  +=   ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1] )
+                                *  globs.myResult[k][i][j];
+                    if(j < numY-1) {
+                    v[k][i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2] )
+                                *  globs.myResult[k][i][j+1];
+                    }
+                    u[k][j][i] += v[k][i][j]; 
                 }
-                u[k][j][i] += v[k][i][j]; 
-            }
-        }
-
-        //	implicit x
-        for(unsigned j=0;j<numY;j++) {
-            for(unsigned i=0;i<numX;i++) {  // here a, b,c should have size [numX]
-                a[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0]);
-                b[k][i] = dtInv - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1]);
-                c[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2]);
-            }
-            // here yy should have size [numX]
-            tridagPar(a[k],b[k],c[k],u[k][j],numX,u[k][j],yy[k]);
-        }
-
-        //	implicit y
-        for(unsigned i=0;i<numX;i++) { 
-            for(unsigned j=0;j<numY;j++) {  // here a, b, c should have size [numY]
-                a[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0]);
-                b[k][j] = dtInv - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1]);
-                c[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2]);
             }
 
-            for(unsigned j=0;j<numY;j++)
-                y[k][j] = dtInv*u[k][j][i] - 0.5*v[k][i][j];
+            //	implicit x
+            for(unsigned j=0;j<numY;j++) {
+                for(unsigned i=0;i<numX;i++) {  // here a, b,c should have size [numX]
+                    a[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0]);
+                    b[k][i] = dtInv[k] - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1]);
+                    c[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2]);
+                }
+                // here yy should have size [numX]
+                tridagPar(a[k],b[k],c[k],u[k][j],numX,u[k][j],yy[k]);
+            }
 
-            // here yy should have size [numY]
-            tridagPar(a[k],b[k],c[k],y[k],numY,globs.myResult[k][i],yy[k]);
+            //	implicit y
+            for(unsigned i=0;i<numX;i++) { 
+                for(unsigned j=0;j<numY;j++) {  // here a, b, c should have size [numY]
+                    a[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0]);
+                    b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1]);
+                    c[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2]);
+                }
+
+                for(unsigned j=0;j<numY;j++)
+                    y[k][j] = dtInv[k]*u[k][j][i] - 0.5*v[k][i][j];
+
+                // here yy should have size [numY]
+                tridagPar(a[k],b[k],c[k],y[k],numY,globs.myResult[k][i],yy[k]);
+            }
         }
-
-      }
+        
     }
 
     for( unsigned k = 0; k < outer; ++ k ) { 
