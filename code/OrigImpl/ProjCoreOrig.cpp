@@ -296,6 +296,7 @@ void   run_OrigCPU(
         }
 
         //	explicit x
+        // do matrix transposition for u (after kernel is executed)
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<numX;i++) {
                 for(unsigned j=0;j<numY;j++) {
@@ -316,6 +317,7 @@ void   run_OrigCPU(
         }
 
         //	explicit y
+        // matrix transposition and/or loop interchange?
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned j=0;j<numY;j++) {
                 for(unsigned i=0;i<numX;i++) {
