@@ -295,9 +295,8 @@ void   run_OrigCPU(
             dtInv[k] = 1.0/(globs.myTimeline[k][g+1]-globs.myTimeline[k][g]);
         }
 
+        //	explicit x
         for( unsigned k = 0; k < outer; ++ k ) {
-
-            //	explicit x
             for(unsigned i=0;i<numX;i++) {
                 for(unsigned j=0;j<numY;j++) {
                     u[k][j][i] = dtInv[k]*globs.myResult[k][i][j];
@@ -314,8 +313,10 @@ void   run_OrigCPU(
                     }
                 }
             }
+        }
 
-            //	explicit y
+        //	explicit y
+        for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned j=0;j<numY;j++) {
                 for(unsigned i=0;i<numX;i++) {
                     v[k][i][j] = 0.0;
@@ -333,8 +334,10 @@ void   run_OrigCPU(
                     u[k][j][i] += v[k][i][j]; 
                 }
             }
+        }
 
-            //	implicit x
+        //	implicit x
+        for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned j=0;j<numY;j++) {
                 for(unsigned i=0;i<numX;i++) {  // here a, b,c should have size [numX]
                     a[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0]);
@@ -344,15 +347,16 @@ void   run_OrigCPU(
                 // here yy should have size [numX]
                 tridagPar(a[k],b[k],c[k],u[k][j],numX,u[k][j],yy[k]);
             }
+        }
 
-            //	implicit y
+        //	implicit y
+        for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<numX;i++) { 
                 for(unsigned j=0;j<numY;j++) {  // here a, b, c should have size [numY]
                     a[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0]);
                     b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1]);
                     c[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2]);
                 }
-
                 for(unsigned j=0;j<numY;j++)
                     y[k][j] = dtInv[k]*u[k][j][i] - 0.5*v[k][i][j];
 
