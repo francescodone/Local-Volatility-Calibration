@@ -230,12 +230,14 @@ __global__ void updateParams(const int outer,
   int gidj = blockIdx.z*blockDim.z + threadIdx.z;
 
   if (gidk <= outer && gidi <= numX && gidj <= numY) {
-    REAL tmp = exp(2.0*(  beta*log(d_myX[gidk*numX+gidi])
-                          + d_myY[gidk*numY+gidj]
-                          - 0.5*nu*nu*d_myTimeline[gidk*outer+g] )
-                   );
-    d_myVarX[gidk*numX*numY + gidi*numY + gidj] = tmp;
-    d_myVarY[gidk*numX*numY + gidi*numY + gidj] = tmp;
+    d_myVarX[gidk*numX*numY + gidi*numY + gidj] = exp(2.0*(  beta*log(d_myX[gidk*numX+gidi])
+							     + d_myY[gidk*numY+gidj]
+							     - 0.5*nu*nu*d_myTimeline[gidk*outer+g] )
+						      );
+    d_myVarY[gidk*numX*numY + gidi*numY + gidj] = exp(2.0*(  alpha*log(d_myX[gidk*numX+gidi])
+							     + d_myY[gidk*numY+gidj]
+							     - 0.5*nu*nu*d_myTimeline[gidk*outer+g] )
+						      );
   }
 }
 
@@ -362,9 +364,8 @@ void   run_OrigCPU(
       cudaMemcpy(d_myTimeline, globs.myTimeline, outer * numT * sizeof(REAL), cudaMemcpyHostToDevice);
       cudaMemcpy(d_myVarX, globs.myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
       cudaMemcpy(d_myVarY, globs.myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
-      printf("Hello\n");
-      // --- updateParams ---
-      
+
+      // --- updateParams ---      
       dim3 grid_4 (outer, globs.sizeX, globs.sizeY);
       updateParams<<<grid_4, block_2>>>(outer,
                                         numX,
@@ -378,8 +379,6 @@ void   run_OrigCPU(
                                         d_myTimeline,
                                         d_myVarX,
                                         d_myVarY);
-      
-      printf("Bye\n");
       
       cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
       cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
@@ -413,7 +412,7 @@ void   run_OrigCPU(
         // --- rollback ---
 
         for( unsigned k = 0; k < outer; ++ k ) {
-            dtInv[k] = 1.0/(globs.myTimeline[k][g+1]-globs.myTimeline[k][g]);
+            dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
         }
 
         //	explicit x
@@ -424,13 +423,13 @@ void   run_OrigCPU(
                     u[k][j][i] = dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
 
                     if(i > 0) { 
-                    u[k][j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0] ) 
+                    u[k][j][i] += 0.5*( 0.5*globs.myVarX[k*outer+i*numX+j]*globs.myDxx[k][i][0] ) 
                                     * globs.myResult[k*numX*numY + (i-1)*numY + j];
                     }
-                    u[k][j][i]  +=  0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1] )
+                    u[k][j][i]  +=  0.5*( 0.5*globs.myVarX[k*outer+i*numX+j]*globs.myDxx[k][i][1] )
                                     * globs.myResult[k*numX*numY + i*numY + j];
                     if(i < numX-1) {
-                        u[k][j][i] += 0.5*( 0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2] )
+                        u[k][j][i] += 0.5*( 0.5*globs.myVarX[k*outer+i*numX+j]*globs.myDxx[k][i][2] )
                                         * globs.myResult[k*numX*numY + (i+1)*numY + j];
                     }
                 }
@@ -445,13 +444,13 @@ void   run_OrigCPU(
                     v[k][i][j] = 0.0;
 
                     if(j > 0) {
-                    v[k][i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0] )
+                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*outer+i*numX+j]*globs.myDyy[k][j][0] )
                                 *  globs.myResult[k*numX*numY + i*numY + j-1];
                     }
-                    v[k][i][j]  +=   ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1] )
+                    v[k][i][j]  +=   ( 0.5*globs.myVarY[k*outer+i*numX+j]*globs.myDyy[k][j][1] )
                                 *  globs.myResult[k*numX*numY + i*numY + j];
                     if(j < numY-1) {
-                    v[k][i][j] +=  ( 0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2] )
+                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*outer+i*numX+j]*globs.myDyy[k][j][2] )
                                 *  globs.myResult[k*numX*numY + i*numY + j+1];
                     }
                     u[k][j][i] += v[k][i][j]; 
@@ -463,9 +462,9 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned j=0;j<numY;j++) {
                 for(unsigned i=0;i<numX;i++) {  // here a, b,c should have size [numX]
-                    a[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][0]);
-                    b[k][i] = dtInv[k] - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][1]);
-                    c[k][i] =		 - 0.5*(0.5*globs.myVarX[k][i][j]*globs.myDxx[k][i][2]);
+                    a[k][i] =		 - 0.5*(0.5*globs.myVarX[k*outer+i*numX+j]*globs.myDxx[k][i][0]);
+                    b[k][i] = dtInv[k] - 0.5*(0.5*globs.myVarX[k*outer+i*numX+j]*globs.myDxx[k][i][1]);
+                    c[k][i] =		 - 0.5*(0.5*globs.myVarX[k*outer+i*numX+j]*globs.myDxx[k][i][2]);
                 }
                 // here yy should have size [numX]
                 tridagPar(a[k],b[k],c[k],u[k][j],numX,u[k][j],yy[k]);
@@ -476,9 +475,9 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<numX;i++) { 
                 for(unsigned j=0;j<numY;j++) {  // here a, b, c should have size [numY]
-                    a[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][0]);
-                    b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][1]);
-                    c[k][j] =		 - 0.5*(0.5*globs.myVarY[k][i][j]*globs.myDyy[k][j][2]);
+                    a[k][j] =		 - 0.5*(0.5*globs.myVarY[k*outer+i*numX+j]*globs.myDyy[k][j][0]);
+                    b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k*outer+i*numX+j]*globs.myDyy[k][j][1]);
+                    c[k][j] =		 - 0.5*(0.5*globs.myVarY[k*outer+i*numX+j]*globs.myDyy[k][j][2]);
                 }
                 for(unsigned j=0;j<numY;j++)
                     y[k][j] = dtInv[k]*u[k][j][i] - 0.5*v[k][i][j];

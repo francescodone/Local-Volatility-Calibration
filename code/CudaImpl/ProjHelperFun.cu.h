@@ -15,16 +15,16 @@ struct PrivGlobs {
     //	grid
     REAL*      myX;        // [outer][numX]
     REAL*      myY;        // [outer][numY]
-    REAL**     myTimeline; // [outer][numT]
+    REAL*      myTimeline; // [outer][numT]
     unsigned*  myXindex;   // [outer]
     unsigned*  myYindex;   // [outer]
 
     //	variable
-    REAL* myResult; // [outer][numX][numY]
+    REAL*      myResult; // [outer][numX][numY]
 
     //	coeffs
-    REAL***   myVarX; // [outer][numX][numY]
-    REAL***   myVarY; // [outer][numX][numY]
+    REAL*      myVarX; // [outer][numX][numY]
+    REAL*      myVarY; // [outer][numX][numY]
 
     //	operators
     REAL***   myDxx;  // [outer][numX][4]
@@ -67,17 +67,22 @@ struct PrivGlobs {
             }
         }
 
+	this->myTimeline = (REAL*) malloc(outer*numT*sizeof(REAL));
+	/*
         //this->myTimeline = new REAL[numT];
         this->myTimeline = new REAL*[outer];
         for(int k=0; k<outer; k++) {
             this->myTimeline[k] = new REAL[numT];
         }
+	*/
 
-        this->myVarX = new REAL**[outer];
-        this->myVarY = new REAL**[outer];
+	this->myVarX = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
+	this->myVarY = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
+        //this->myVarX = new REAL**[outer];
+        //this->myVarY = new REAL**[outer];
         this->myResult = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
 
-        
+        /*
         for(int k=0; k<outer; k++) {
             this->  myVarX[k] = new REAL*[numX];
             this->  myVarY[k] = new REAL*[numX];
@@ -86,6 +91,7 @@ struct PrivGlobs {
                 this->  myVarY[k][i] = new REAL[numY];
             }
         }
+	*/
         this->sizeX = numX;
         this->sizeY = numY;
         this->sizeT = numT;
