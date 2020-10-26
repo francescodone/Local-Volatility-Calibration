@@ -213,6 +213,32 @@ __global__ void updateGlobsMyResult(int outer, int numX, int numY, REAL* d_payof
     }
 }
 
+__global__ void updateParams(const int outer,
+                             const int numX,
+                             const int numY,
+                             const int g,
+                             const REAL alpha,
+                             const REAL beta,
+                             const REAL nu,
+                             const REAL* d_myX,
+                             const REAL* d_myY,
+                             const REAL* d_myTimeline,
+                             REAL* d_myVarX,
+                             REAL* d_myVarY) {
+  int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+  int gidi = blockIdx.y*blockDim.y + threadIdx.y;
+  int gidj = blockIdx.z*blockDim.z + threadIdx.z;
+
+  if (gidk <= outer && gidi <= numX && gidj <= numY) {
+    REAL tmp = exp(2.0*(  beta*log(d_myX[gidk*numX+gidi])
+                          + d_myY[k*numY+gidj]
+                          - 0.5*nu*nu*d_myTimeline[gidk*outer+g] )
+                   );
+    d_myVarX[gidk*numX*numY + gidi*numY + gidj] = tmp;
+    d_myVarY[gidk*numX*numY + gidi*numY + gidj] = tmp;
+  }
+}
+
 void   run_OrigCPU(  
                 const unsigned int&   outer,
                 const unsigned int&   numX,
@@ -307,6 +333,8 @@ void   run_OrigCPU(
     updateGlobsMyResult<<<grid_3, block_2>>>(outer, numX, numY, d_payoff, d_my_result);
     cudaDeviceSynchronize();
 
+
+
     cudaMemcpy(globs.myResult, d_my_result, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
 
 
@@ -322,8 +350,47 @@ void   run_OrigCPU(
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
 
+      REAL *d_myX, *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY;
+      cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
+      cudaMalloc((void**) &d_myY, outer * numY * sizeof(REAL));
+      cudaMalloc((void**) &d_myTimeline, outer * numT * sizeof(REAL));
+      cudaMalloc((void**) &d_myVarX, outer * numX * numY * sizeof(REAL));
+      cudaMalloc((void**) &d_myVarY, outer * numX * numY * sizeof(REAL));
 
-        // --- updateParams ---    
+      cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_myY, globs.myY outer * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_myTimeline, globs.myTimeline outer * numT * sizeof(REAL), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_myVarX, globs.myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_myVarY, globs.myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+      
+      // --- updateParams ---
+      dim3 grid_3 (dim_y, dim_x, outer);
+      updateParams<<<grid_3, block_2>>>(outer,
+                                        numX,
+                                        numY,
+                                        g,
+                                        alpha,
+                                        beta,
+                                        nu,
+                                        d_myX,
+                                        d_myY,
+                                        d_myTimeline,
+                                        d_myVarX,
+                                        d_myVarY);
+
+      cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(globs.myVarX, d_myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(globs.myVarY, d_myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+      cudaFree(d_myX);
+      cudaFree(d_myY);
+      cudaFree(d_myTimeline);
+      cudaFree(d_myVarX);
+      cudaFree(d_myVarY);
+
+      /*
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<globs.sizeX;++i) {
                 for(unsigned j=0;j<globs.sizeY;++j) {
@@ -338,6 +405,7 @@ void   run_OrigCPU(
                 }
             }
         }
+      */
 
         // --- rollback ---
 
