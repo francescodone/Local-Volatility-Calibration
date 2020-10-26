@@ -1,0 +1,9 @@
+\begin{thebibliography}{1}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+
+\bibitem[{Author(Year)}]{tag1}
+Author. Year.
+\newblock Title.
+\newblock \emph{Journal}, Volume (year):Pages.
+
+\end{thebibliography}
