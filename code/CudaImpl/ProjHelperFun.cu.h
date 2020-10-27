@@ -67,27 +67,13 @@ struct PrivGlobs {
             }
         }
 
-        //this->myTimeline = new REAL[numT];
         this->myTimeline = (REAL*) malloc(outer*numT*sizeof(REAL));
-        this->myTimeline = new REAL*[outer];
-        for(int k=0; k<outer; k++) {
-            this->myTimeline[k] = new REAL[numT];
-        }
-
+        
         this->myVarX = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
         this->myVarY = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
         this->myResult = (REAL*) malloc(outer*numX*numY*sizeof(REAL));
 
-        
-        for(int k=0; k<outer; k++) {
-            this->  myVarX[k] = new REAL*[numX];
-            this->  myVarY[k] = new REAL*[numX];
-            for(unsigned i=0;i<numX;++i) {
-                this->  myVarX[k][i] = new REAL[numY];
-                this->  myVarY[k][i] = new REAL[numY];
-            }
-        }
-        this->sizeX = numX;
+	this->sizeX = numX;
         this->sizeY = numY;
         this->sizeT = numT;
         this->sizeO = outer;
