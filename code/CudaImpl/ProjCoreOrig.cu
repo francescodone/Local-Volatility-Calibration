@@ -244,6 +244,25 @@ __global__ void updateParams(const int outer,
   }
 }
 
+__global__ void rollback(const int outer,
+			 const int numT,
+			 const int g,
+			 const REAL* d_myTimeline,
+			 REAL* d_dtInv) {
+  int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+
+  if (gidk < outer) {
+    d_dtInv[gidk] = 1.0/(d_myTimeline[gidk*numT+g+1]-d_myTimeline[gidk*numT+g]);
+  }
+}
+
+/*
+__global__ void explicitX(const int outer,
+			  const int numX,
+			  const int numY,
+			  const 
+*/
+
 void   run_OrigCPU(  
                 const unsigned int&   outer,
                 const unsigned int&   numX,
@@ -275,9 +294,10 @@ void   run_OrigCPU(
     unsigned numZ = max(numX,numY);
 
     REAL* strike = new REAL[outer];
-    REAL* dtInv = new REAL[outer];
+    REAL* dtInv = (REAL*) malloc(outer*sizeof(REAL));
 
     REAL*** u = new REAL**[outer];
+    //REAL* u = malloc(outer * numY * numX); // [outer][numY][numX]
     REAL*** v = new REAL**[outer];
     
     for(int k=0; k<outer; k++) {
@@ -386,13 +406,13 @@ void   run_OrigCPU(
       
       cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
       cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-      cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
+      //cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
       cudaMemcpy(globs.myVarX, d_myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
       cudaMemcpy(globs.myVarY, d_myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
       
       cudaFree(d_myX);
       cudaFree(d_myY);
-      cudaFree(d_myTimeline);
+      //cudaFree(d_myTimeline);
       cudaFree(d_myVarX);
       cudaFree(d_myVarY);
 
@@ -418,9 +438,24 @@ void   run_OrigCPU(
 
         // --- rollback ---
 
-        for( unsigned k = 0; k < outer; ++ k ) {
-            dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
-        }
+      REAL* d_dtInv;
+      cudaMalloc((void**) &d_dtInv, outer * sizeof(REAL));
+      cudaMemcpy(d_dtInv, dtInv, outer * sizeof(REAL), cudaMemcpyHostToDevice);
+
+      rollback<<<outer, block_2>>>(outer, numT, g, d_myTimeline, d_dtInv);
+
+      /*
+      for( unsigned k = 0; k < outer; ++ k ) {
+	dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
+      }
+      */
+
+      cudaMemcpy(dtInv, d_dtInv, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaFree(d_dtInv);
+      
+      cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaFree(d_myTimeline);
+
 
         //	explicit x
         // do matrix transposition for u (after kernel is executed)
