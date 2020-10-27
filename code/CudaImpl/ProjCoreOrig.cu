@@ -327,14 +327,16 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<globs.sizeX;++i) {
                 for(unsigned j=0;j<globs.sizeY;++j) {
-                    globs.myVarX[k][i][j] = exp(2.0*(  beta*log(globs.myX[k*numX+i])
-                                                     + globs.myY[k*numY+j]
-                                                     - 0.5*nu*nu*globs.myTimeline[k][g] )
-                                          );
-                    globs.myVarY[k][i][j] = exp(2.0*(  alpha*log(globs.myX[k*numX+i])
-                                                     + globs.myY[k*numY+j]
-                                                     - 0.5*nu*nu*globs.myTimeline[k][g] )
-                                          ); // nu*nu
+                    globs.myVarX[k*numX*numY+i*numY+j] =
+                      exp(2.0*(  beta*log(globs.myX[k*numX+i])
+                                 + globs.myY[k*numY+j]
+                                 - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
+                          );
+                    globs.myVarY[k*numX*numY+i*numY+j] =
+                      exp(2.0*(  alpha*log(globs.myX[k*numX+i])
+                                 + globs.myY[k*numY+j]
+                                 - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
+                          ); // nu*nu
                 }
             }
         }
