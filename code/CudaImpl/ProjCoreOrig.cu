@@ -230,7 +230,7 @@ __global__ void updateParams(const int outer,
   int gidi = blockIdx.y*blockDim.y + threadIdx.y;
   int gidj = blockIdx.z*blockDim.z + threadIdx.z;
 
-  if (gidk <= outer && gidi <= numX && gidj <= numY) {
+  if (gidk < outer && gidi < numX && gidj < numY) {
     d_myVarX[gidk*numX*numY + gidi*numY + gidj] = 
       exp(2.0*(  beta*log(d_myX[gidk*numX+gidi])
 		 + d_myY[gidk*numY+gidj]
