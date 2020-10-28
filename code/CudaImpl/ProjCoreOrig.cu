@@ -51,20 +51,20 @@ __global__ void updateParams(const int outer,
 }
 
 
-
-
+// TODO: transpose d_dtInv
 __global__ void rollback(const int outer,
 			 const int numT,
 			 const int g,
 			 const REAL* d_myTimeline,
 			 REAL* d_dtInv) 
 {
-    int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+    int gidx = blockIdx.x*blockDim.x + threadIdx.x;
 
-    if (gidk < outer) {
-        d_dtInv[gidk] = 1.0/(d_myTimeline[gidk*numT+g+1]-d_myTimeline[gidk*numT+g]);
+    if (gidx < outer) {
+        d_dtInv[gidx] = 1.0/(d_myTimeline[gidx*numT+g+1]-d_myTimeline[gidx*numT+g]);
     }
 }
+
 
 __global__ void explicitX(const int outer,
 	                      const int numX,
@@ -75,9 +75,9 @@ __global__ void explicitX(const int outer,
 			              const REAL* d_myDxx,
 			              REAL* d_u) 
 {
-    int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+    int gidk = blockIdx.z*blockDim.z + threadIdx.z;
     int gidi = blockIdx.y*blockDim.y + threadIdx.y;
-    int gidj = blockIdx.z*blockDim.z + threadIdx.z;
+    int gidj = blockIdx.x*blockDim.x + threadIdx.x;
 
     if (gidk < outer && gidi < numX && gidj < numY) {
         d_u[gidk*numX*numY+gidj*numX+gidi] = 
@@ -85,8 +85,8 @@ __global__ void explicitX(const int outer,
 
         if(gidi > 0) { 
             d_u[gidk*numX*numY+gidj*numX+gidi] += 
-            0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+0] ) 
-            * d_myResult[gidk*numX*numY + (gidi-1)*numY + gidj];
+                0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+0] ) 
+                * d_myResult[gidk*numX*numY + (gidi-1)*numY + gidj];
         }
 
         d_u[gidk*numX*numY+gidj*numX+gidi] += 
@@ -95,8 +95,8 @@ __global__ void explicitX(const int outer,
 
         if(gidi < numX-1) {
             d_u[gidk*numX*numY+gidj*numX+gidi] += 
-            0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+2] )
-            * d_myResult[gidk*numX*numY + (gidi+1)*numY + gidj];
+                0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+2] )
+                * d_myResult[gidk*numX*numY + (gidi+1)*numY + gidj];
         }
     }
 }
@@ -119,7 +119,8 @@ void   run_OrigCPU(
 
     // calculating cuda dim
 
-    int block_size = 16;
+    int full_block_size = 256;
+    int block_size = 32;
 
     dim3 block_2(block_size, block_size, 1);
 
@@ -227,7 +228,6 @@ void   run_OrigCPU(
 
 
     // --- updateParams ---      
-        //dim3 grid_4 (outer, numX, numY);
         updateParams<<<grid_3, block_2>>>(outer,
             numX,
             numY,
@@ -241,54 +241,30 @@ void   run_OrigCPU(
             d_myTimeline,
             d_myVarX,
             d_myVarY);
-        cudaDeviceSynchronize();
 
-        cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
         cudaMemcpy(globs.myVarX, d_myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(globs.myVarY, d_myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
 
-       /*
-       // --- updateParams ---    
-        for( unsigned k = 0; k < outer; ++ k ) {
-            for(unsigned i=0;i<globs.sizeX;++i) {
-                for(unsigned j=0;j<globs.sizeY;++j) {
-                    
-                    globs.myVarX[k*numX*numY+i*numY+j] =
-                        exp(2.0*(  beta*log(globs.myX[k*numX+i])
-                            + globs.myY[k*numY+j]
-                            - 0.5*nu*nu*globs.myTimeline[k*numT+g] ));
-
-                    globs.myVarY[k*numX*numY+i*numY+j] =
-                        exp(2.0*(  alpha*log(globs.myX[k*numX+i])
-                            + globs.myY[k*numY+j]
-                            - 0.5*nu*nu*globs.myTimeline[k*numT+g] )); // nu*nu
-                }
-            }
-       }
-       */
 
 	 // --- rollback ---
-
-        
         cudaMemcpy(d_dtInv, dtInv, outer * sizeof(REAL), cudaMemcpyHostToDevice);
+        unsigned int num_blocks_outer = ((outer + (full_block_size - 1)) / full_block_size);
+        rollback<<<num_blocks_outer, full_block_size>>>(outer, numT, g, d_myTimeline, d_dtInv);
+        cudaDeviceSynchronize();   
+        cudaMemcpy(dtInv, d_dtInv, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
 
-        rollback<<<outer, block_2>>>(outer, numT, g, d_myTimeline, d_dtInv);
-        cudaDeviceSynchronize();
-       /*
-        for( unsigned k = 0; k < outer; ++ k ) {
-            dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
-        }
-       */       
+
+    // ---- explicit x
 
         cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(d_myResult, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_u,        u,              outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
        
-       /*
-       dim3 grid_5 (outer, numX, numY);      
-       explicitX<<<grid_5, block_2>>>(outer,
+       
+       //dim3 grid_5 (outer, numX, numY);      
+       explicitX<<<grid_3, block_2>>>(outer,
 				     numX,
 				     numY,
 				     d_dtInv,
@@ -296,45 +272,44 @@ void   run_OrigCPU(
 				     d_myVarX,
 				     d_myDxx,
 				     d_u);
-       */
+       
 
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
 
-        cudaMemcpy(globs.myResult, d_myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost); 
-        cudaMemcpy(globs.myVarX,   d_myVarX,   outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(globs.myDxx,    d_myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(globs.myResult, d_myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost); 
+        // cudaMemcpy(globs.myVarX,   d_myVarX,   outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+        // cudaMemcpy(globs.myDxx,    d_myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(u,              d_u,        outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(dtInv,          d_dtInv,    outer               * sizeof(REAL), cudaMemcpyDeviceToHost);
 
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
       
       
         //	explicit x
         // do matrix transposition for u (after kernel is executed)
-        for( unsigned k = 0; k < outer; ++ k ) {
-            for(unsigned i=0;i<numX;i++) {
-                for(unsigned j=0;j<numY;j++) {
-                    u[k*numX*numY+j*numX+i] = 
-                        dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
+        // for( unsigned k = 0; k < outer; ++ k ) {
+        //     for(unsigned i=0;i<numX;i++) {
+        //         for(unsigned j=0;j<numY;j++) {
+        //             u[k*numX*numY+j*numX+i] = 
+        //                 dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
 
-                    if(i > 0) { 
-                        u[k*numX*numY+j*numX+i] += 
-                            0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0] ) 
-                            * globs.myResult[k*numX*numY + (i-1)*numY + j];
-                    }
+        //             if(i > 0) { 
+        //                 u[k*numX*numY+j*numX+i] += 
+        //                     0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0] ) 
+        //                     * globs.myResult[k*numX*numY + (i-1)*numY + j];
+        //             }
 
-                    u[k*numX*numY+j*numX+i] +=
-                        0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1] )
-                        * globs.myResult[k*numX*numY + i*numY + j];
+        //             u[k*numX*numY+j*numX+i] +=
+        //                 0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1] )
+        //                 * globs.myResult[k*numX*numY + i*numY + j];
 
-                    if(i < numX-1) {
-                        u[k*numX*numY+j*numX+i] +=
-                            0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2] )
-                            * globs.myResult[k*numX*numY + (i+1)*numY + j];
-                    }
-                }
-            }
-        }
+        //             if(i < numX-1) {
+        //                 u[k*numX*numY+j*numX+i] +=
+        //                     0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2] )
+        //                     * globs.myResult[k*numX*numY + (i+1)*numY + j];
+        //             }
+        //         }
+        //     }
+        // }
       
 
         //	explicit y
