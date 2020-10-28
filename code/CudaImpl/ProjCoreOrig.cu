@@ -201,21 +201,23 @@ void   run_OrigCPU(
 
     cudaFree(d_payoff);
     cudaFree(d_strike);
-    cudaFree(d_myX);
     cudaFree(d_my_result);
-  // free(h_payoff);
 
      // --- end of setPayoff - cuda ----
 
 
+    REAL *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY, *d_myResult, *d_myDxx, *d_u, *d_dtInv;
+    cudaMalloc((void**) &d_myY, outer * numY * sizeof(REAL));
+    cudaMalloc((void**) &d_myTimeline, outer * numT * sizeof(REAL));
+    cudaMalloc((void**) &d_myVarX, outer * numX * numY * sizeof(REAL));
+    cudaMalloc((void**) &d_myVarY, outer * numX * numY * sizeof(REAL));
+    cudaMalloc((void**) &d_myResult, outer * numX * numY * sizeof(REAL));
+    cudaMalloc((void**) &d_myDxx,    outer * numX *    4 * sizeof(REAL));
+    cudaMalloc((void**) &d_u,        outer * numX * numY * sizeof(REAL));
+    cudaMalloc((void**) &d_dtInv, outer * sizeof(REAL));
+
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
-        REAL *d_myX, *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY;
-        cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
-        cudaMalloc((void**) &d_myY, outer * numY * sizeof(REAL));
-        cudaMalloc((void**) &d_myTimeline, outer * numT * sizeof(REAL));
-        cudaMalloc((void**) &d_myVarX, outer * numX * numY * sizeof(REAL));
-        cudaMalloc((void**) &d_myVarY, outer * numX * numY * sizeof(REAL));
 
         cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myY, globs.myY, outer * numY * sizeof(REAL), cudaMemcpyHostToDevice);
@@ -243,66 +245,43 @@ void   run_OrigCPU(
 
         cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        //cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(globs.myVarX, d_myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(globs.myVarY, d_myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
 
-        cudaFree(d_myX);
-        cudaFree(d_myY);
-        //cudaFree(d_myTimeline);
-        cudaFree(d_myVarX);
-        cudaFree(d_myVarY);
-
        /*
        // --- updateParams ---    
-       for( unsigned k = 0; k < outer; ++ k ) {
-	 for(unsigned i=0;i<globs.sizeX;++i) {
-	   for(unsigned j=0;j<globs.sizeY;++j) {
-	     globs.myVarX[k*numX*numY+i*numY+j] =
-	       exp(2.0*(  beta*log(globs.myX[k*numX+i])
-			  + globs.myY[k*numY+j]
-			  - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
-		   );
-	     globs.myVarY[k*numX*numY+i*numY+j] =
-	       exp(2.0*(  alpha*log(globs.myX[k*numX+i])
-			  + globs.myY[k*numY+j]
-			  - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
-		   ); // nu*nu
-	   }
-	 }
+        for( unsigned k = 0; k < outer; ++ k ) {
+            for(unsigned i=0;i<globs.sizeX;++i) {
+                for(unsigned j=0;j<globs.sizeY;++j) {
+                    
+                    globs.myVarX[k*numX*numY+i*numY+j] =
+                        exp(2.0*(  beta*log(globs.myX[k*numX+i])
+                            + globs.myY[k*numY+j]
+                            - 0.5*nu*nu*globs.myTimeline[k*numT+g] ));
+
+                    globs.myVarY[k*numX*numY+i*numY+j] =
+                        exp(2.0*(  alpha*log(globs.myX[k*numX+i])
+                            + globs.myY[k*numY+j]
+                            - 0.5*nu*nu*globs.myTimeline[k*numT+g] )); // nu*nu
+                }
+            }
        }
        */
 
 	 // --- rollback ---
 
-        REAL* d_dtInv;
-        cudaMalloc((void**) &d_dtInv, outer * sizeof(REAL));
+        
         cudaMemcpy(d_dtInv, dtInv, outer * sizeof(REAL), cudaMemcpyHostToDevice);
 
         rollback<<<outer, block_2>>>(outer, numT, g, d_myTimeline, d_dtInv);
         cudaDeviceSynchronize();
        /*
-       for( unsigned k = 0; k < outer; ++ k ) {
-	 dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
-       }
-       */
-
-       //cudaMemcpy(dtInv, d_dtInv, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
-       //cudaFree(d_dtInv);
+        for( unsigned k = 0; k < outer; ++ k ) {
+            dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
+        }
+       */       
 
         cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaFree(d_myTimeline);
-
-
-       //REAL *d_myResult, *d_myDxx, *d_u;
-
-
-        cudaDeviceSynchronize();
-        REAL *d_myResult, *d_myDxx, *d_u;
-        cudaMalloc((void**) &d_myResult, outer * numX * numY * sizeof(REAL));
-        cudaMalloc((void**) &d_myDxx,    outer * numX *    4 * sizeof(REAL));
-        cudaMalloc((void**) &d_u,        outer * numX * numY * sizeof(REAL));
-
         cudaMemcpy(d_myResult, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_u,        u,              outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
@@ -318,18 +297,14 @@ void   run_OrigCPU(
 				     d_myDxx,
 				     d_u);
        */
+
         cudaDeviceSynchronize();
 
         cudaMemcpy(globs.myResult, d_myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost); 
-        cudaFree(d_myResult);
         cudaMemcpy(globs.myVarX,   d_myVarX,   outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaFree(d_myVarX);
         cudaMemcpy(globs.myDxx,    d_myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaFree(d_myDxx);
         cudaMemcpy(u,              d_u,        outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaFree(d_u);
         cudaMemcpy(dtInv,          d_dtInv,    outer               * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaFree(d_dtInv);
 
         cudaDeviceSynchronize();
       
@@ -418,6 +393,13 @@ void   run_OrigCPU(
     for( unsigned k = 0; k < outer; ++ k ) { 
         res[k] = globs.myResult[k*numX*numY + globs.myXindex[k]*numY + globs.myYindex[k]];
     }
+
+    cudaFree(d_myX);
+    cudaFree(d_myY);
+    cudaFree(d_myTimeline);
+    cudaFree(d_myVarX);
+    cudaFree(d_myVarY);
+    cudaFree(d_dtInv);
 
 }
 
