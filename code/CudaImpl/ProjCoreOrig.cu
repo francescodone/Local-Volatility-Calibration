@@ -181,20 +181,11 @@ void   run_OrigCPU(
     REAL* u = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
     REAL* v = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
 
-    REAL** a = new REAL*[outer];
-    REAL** b = new REAL*[outer];
-    REAL** c = new REAL*[outer];
-    REAL** y = new REAL*[outer];
-    REAL** yy = new REAL*[outer];
-
-    for(int k=0; k<outer; k++) {
-        a[k] = new REAL[numZ];
-        b[k] = new REAL[numZ];
-        c[k] = new REAL[numZ];
-        y[k] = new REAL[numZ];
-        yy[k] = new REAL[numZ];
-    }
-
+    REAL* a = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
+    REAL* b = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
+    REAL* c = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
+    REAL* y = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
+    REAL* yy = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
 
      // ----- MAIN LOOP ------
 
@@ -321,16 +312,31 @@ void   run_OrigCPU(
 
     // implicit x
 
+
         //	implicit x
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned j=0;j<numY;j++) {
                 for(unsigned i=0;i<numX;i++) {  // here a, b,c should have size [numX]
-                    a[k][i] =		 - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0]);
-                    b[k][i] = dtInv[k] - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1]);
-                    c[k][i] =		 - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2]);
+                    a[k*numX*numY+j*numX+i] = 
+                        - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0]);
+                    b[k*numX*numY+j*numX+i] = 
+                        dtInv[k] - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1]);
+                    c[k*numX*numY+j*numX+i] = 
+                        - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2]);
                 }
+            }
+        }
+
+        for( unsigned k = 0; k < outer; ++ k ) {
+            for(unsigned j=0;j<numY;j++) {
                 // here yy should have size [numX]
-                tridagPar(a[k],b[k],c[k],&u[k*numX*numY+j*numX],numX,&u[k*numX*numY+j*numX],yy[k]);
+                tridagPar(&a[k*numX*numY+j*numX],
+                    &b[k*numX*numY+j*numX],
+                    &c[k*numX*numY+j*numX],
+                    &u[k*numX*numY+j*numX],
+                    numX,
+                    &u[k*numX*numY+j*numX],
+                    &yy[k*numY+j]);
             }
         }
 
@@ -338,15 +344,28 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<numX;i++) { 
                 for(unsigned j=0;j<numY;j++) {  // here a, b, c should have size [numY]
-                    a[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+0]);
-                    b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+1]);
-                    c[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+2]);
-                }
-                for(unsigned j=0;j<numY;j++)
-                    y[k][j] = dtInv[k]*u[k*numX*numY+j*numX+i] - 0.5*v[k*numX*numY+i*numY+j];
+                    a[k*numX*numY+i*numY+j] = 
+                        - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+0]);
+                    b[k*numX*numY+i*numY+j] = 
+                        dtInv[k] - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+1]);
+                    c[k*numX*numY+i*numY+j] = 
+                        - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+2]);
 
+                    y[k*numX*numY+i*numY+j] = dtInv[k]*u[k*numX*numY+j*numX+i] - 0.5*v[k*numX*numY+i*numY+j];
+                }
+            }
+        }
+
+        for( unsigned k = 0; k < outer; ++ k ) {
+            for(unsigned i=0;i<numX;i++) { 
                 // here yy should have size [numY]
-                tridagPar(a[k],b[k],c[k],y[k],numY,&globs.myResult[k*numX*numY + i*numY],yy[k]);
+                tridagPar(&a[k*numX*numY+i*numY],
+                    &b[k*numX*numY+i*numY],
+                    &c[k*numX*numY+i*numY],
+                    &y[k*numX*numY+i*numY],
+                    numY,
+                    &globs.myResult[k*numX*numY + i*numY],
+                    &yy[k*numX+i]);
             }
         }
         
