@@ -256,12 +256,38 @@ __global__ void rollback(const int outer,
   }
 }
 
-/*
 __global__ void explicitX(const int outer,
 			  const int numX,
 			  const int numY,
-			  const 
-*/
+			  const REAL* d_dtInv,
+			  const REAL* d_myResult,
+			  const REAL* d_myVarX,
+			  const REAL* d_myDxx,
+			  REAL* d_u) {
+  int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+  int gidi = blockIdx.y*blockDim.y + threadIdx.y;
+  int gidj = blockIdx.z*blockDim.z + threadIdx.z;
+
+  if (gidk < outer && gidi < numX && gidj < numY) {
+    d_u[gidk*numX*numY+gidj*numX+gidi] = 
+      d_dtInv[gidk]*d_myResult[gidk*numX*numY + gidi*numY + gidj];
+  
+    if(gidi > 0) { 
+      d_u[gidk*numX*numY+gidj*numX+gidi] += 
+	0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+0] ) 
+	* d_myResult[gidk*numX*numY + (gidi-1)*numY + gidj];
+    }
+    d_u[gidk*numX*numY+gidj*numX+gidi] += 
+      0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+1] )
+      * d_myResult[gidk*numX*numY + gidi*numY + gidj];
+    if(gidi < numX-1) {
+      d_u[gidk*numX*numY+gidj*numX+gidi] += 
+	0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+2] )
+	* d_myResult[gidk*numX*numY + (gidi+1)*numY + gidj];
+    }
+  }
+}
+
 
 void   run_OrigCPU(  
                 const unsigned int&   outer,
@@ -296,7 +322,6 @@ void   run_OrigCPU(
     REAL* strike = new REAL[outer];
     REAL* dtInv = (REAL*) malloc(outer*sizeof(REAL));
 
-    //REAL*** u = new REAL**[outer];
     REAL* u = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
     REAL*** v = new REAL**[outer];
     
@@ -450,33 +475,69 @@ void   run_OrigCPU(
       }
       */
 
-      cudaMemcpy(dtInv, d_dtInv, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
-      cudaFree(d_dtInv);
+      //cudaMemcpy(dtInv, d_dtInv, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
+      //cudaFree(d_dtInv);
       
       cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
       cudaFree(d_myTimeline);
 
+      REAL *d_myResult, *d_myDxx, *d_u;
+      cudaMalloc((void**) &d_myResult, outer * numX * numY * sizeof(REAL));
+      cudaMalloc((void**) &d_myDxx,    outer * numX *    4 * sizeof(REAL));
+      cudaMalloc((void**) &d_u,        outer * numX * numY * sizeof(REAL));
 
-        //	explicit x
-        // do matrix transposition for u (after kernel is executed)
-        for( unsigned k = 0; k < outer; ++ k ) {
-            for(unsigned i=0;i<numX;i++) {
-                for(unsigned j=0;j<numY;j++) {
-                    u[k*numX*numY+j*numX+i] = dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
+      cudaMemcpy(d_myResult, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
+      cudaMemcpy(d_u,        u,              outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+      
+      /*
+      explicitX<<<grid_4, block_2>>>(outer,
+				     numX,
+				     numY,
+				     d_dtInv,
+				     d_myResult,
+				     d_myVarX,
+				     d_myDxx,
+				     d_u);
+      */
 
-                    if(i > 0) { 
-                    u[k*numX*numY+j*numX+i] += 0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0] ) 
-                                    * globs.myResult[k*numX*numY + (i-1)*numY + j];
-                    }
-                    u[k*numX*numY+j*numX+i]  +=  0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1] )
-                                    * globs.myResult[k*numX*numY + i*numY + j];
-                    if(i < numX-1) {
-                        u[k*numX*numY+j*numX+i] += 0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2] )
-                                        * globs.myResult[k*numX*numY + (i+1)*numY + j];
-                    }
-                }
-            }
-        }
+      cudaMemcpy(globs.myResult, d_myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(globs.myVarX,   d_myVarX,   outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(globs.myDxx,    d_myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(u,              d_u,        outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaMemcpy(dtInv,          d_dtInv,    outer               * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+      cudaFree(d_myResult);
+      cudaFree(d_myVarX);
+      cudaFree(d_myDxx);
+      cudaFree(d_u);
+      cudaFree(d_dtInv);
+
+      
+      //	explicit x
+      // do matrix transposition for u (after kernel is executed)
+      for( unsigned k = 0; k < outer; ++ k ) {
+	for(unsigned i=0;i<numX;i++) {
+	  for(unsigned j=0;j<numY;j++) {
+	    u[k*numX*numY+j*numX+i] = dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
+
+	    if(i > 0) { 
+	      u[k*numX*numY+j*numX+i] += 
+		0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0] ) 
+		* globs.myResult[k*numX*numY + (i-1)*numY + j];
+	    }
+	    u[k*numX*numY+j*numX+i] +=
+	      0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1] )
+	      * globs.myResult[k*numX*numY + i*numY + j];
+	    if(i < numX-1) {
+	      u[k*numX*numY+j*numX+i] +=
+		0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2] )
+		* globs.myResult[k*numX*numY + (i+1)*numY + j];
+	    }
+	  }
+	}
+      }
+
 
         //	explicit y
         // matrix transposition and/or loop interchange?
