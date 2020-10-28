@@ -23,6 +23,7 @@ __global__ void updateGlobsMyResult(int outer, int numX, int numY, REAL* d_payof
     }
 }
 
+
 __global__ void updateParams(const int outer,
 			     const int numX,
 			     const int numY,
@@ -35,35 +36,34 @@ __global__ void updateParams(const int outer,
 			     const REAL* d_myY,
 			     const REAL* d_myTimeline,
 			     REAL* d_myVarX,
-			     REAL* d_myVarY) {
-    int gidk = blockIdx.x*blockDim.x + threadIdx.x;
-    int gidi = blockIdx.y*blockDim.y + threadIdx.y;
-    int gidj = blockIdx.z*blockDim.z + threadIdx.z;
+			     REAL* d_myVarY) 
+{
+    int gidx = blockIdx.x*blockDim.x + threadIdx.x;
+    int gidy = blockIdx.y*blockDim.y + threadIdx.y;
+    int gidz = blockIdx.z*blockDim.z + threadIdx.z;
 
-    if (gidk < outer && gidi < numX && gidj < numY) {
-        d_myVarX[gidk*numX*numY + gidi*numY + gidj] = 
-            exp(2.0*(  beta*log(d_myX[gidk*numX+gidi])
-            + d_myY[gidk*numY+gidj]
-            - 0.5*nu*nu*d_myTimeline[gidk*numT+g] ));
-
-        d_myVarY[gidk*numX*numY + gidi*numY + gidj] = 
-            exp(2.0*(  alpha*log(d_myX[gidk*numX+gidi])
-                + d_myY[gidk*numY+gidj]
-                - 0.5*nu*nu*d_myTimeline[gidk*numT+g] ));
+    if (gidz < outer && gidy < numX && gidx < numY) {
+        REAL tmp_1 = log(d_myX[gidz*numX+gidy]);
+        REAL tmp_2 = d_myY[gidz*numY+gidx] - 0.5*nu*nu*d_myTimeline[gidz*numT+g];
+        d_myVarX[gidz*numX*numY + gidy*numY + gidx] = exp(2.0*(beta*tmp_1 + tmp_2));
+        d_myVarY[gidz*numX*numY + gidy*numY + gidx] = exp(2.0*(alpha*tmp_1 + tmp_2));
     }
 }
+
+
+
 
 __global__ void rollback(const int outer,
 			 const int numT,
 			 const int g,
 			 const REAL* d_myTimeline,
-			 REAL* d_dtInv) {
+			 REAL* d_dtInv) 
+{
     int gidk = blockIdx.x*blockDim.x + threadIdx.x;
 
     if (gidk < outer) {
         d_dtInv[gidk] = 1.0/(d_myTimeline[gidk*numT+g+1]-d_myTimeline[gidk*numT+g]);
     }
-
 }
 
 __global__ void explicitX(const int outer,
@@ -227,8 +227,8 @@ void   run_OrigCPU(
 
 
     // --- updateParams ---      
-        dim3 grid_4 (outer, numX, numY);
-        updateParams<<<grid_4, block_2>>>(outer,
+        //dim3 grid_4 (outer, numX, numY);
+        updateParams<<<grid_3, block_2>>>(outer,
             numX,
             numY,
             numT,
