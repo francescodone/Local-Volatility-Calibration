@@ -2,6 +2,39 @@
 #include "Constants.h"
 #include "TridagPar.cu.h"
 
+/***********************************************************************************/
+/* // Example of usage of the matTransposeTiled function			   */
+/* // d_u   : [outer][numY][numX]						   */
+/* // d_u_T : [outer][numX][numY]						   */
+/* 										   */
+/* REAL *d_u_T;									   */
+/* cudaMalloc((void**) &d_u_T,        outer * numX * numY * sizeof(REAL));	   */
+/* 										   */
+/* matTransposeTiled<<<numX, numY, outer>>>(d_u, d_u_T, numX, numY, outer);	   */
+/* cudaDeviceSynchronize();							   */
+/* 										   */
+/* matTransposeTiled<<<numY, numX, outer>>>(d_u_T, d_u, numY, numX, outer);	   */
+/* cudaDeviceSynchronize();							   */
+/* cudaFree(d_u_T);								   */
+/***********************************************************************************/
+__global__ void matTransposeTiled(REAL* A, REAL* B, int rowsA, int colsA, int outer) {
+    const int TILE = 16;
+
+    __shared__ REAL shtileTR[TILE][TILE][TILE /* +1 */];
+
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int z = blockIdx.z * blockDim.z * threadIdx.z;
+
+    if( x < rowsA && y < colsA )
+	shtileTR[threadIdx.z][threadIdx.y][threadIdx.x] = A[z*rowsA*colsA + y*colsA + x];
+
+    __syncthreads();
+
+    if( x < colsA && y < rowsA && z < outer )
+	B[z*rowsA*colsA + y*rowsA + x] = shtileTR[threadIdx.z][threadIdx.x][threadIdx.y];
+}
+
 // --- setPayoff -----
 
 __global__ void initPayoff(int outer, int numX, REAL* payoff_cuda, REAL* myX, REAL* strike) {
