@@ -202,24 +202,53 @@ __global__ void implicitX(const int outer,
     }
 }
 
-// __global__ void implicitX_tridag(const int outer,
-//                           const int numX,
-// 			              const int numY,
-// 			              REAL* a,
-//                           REAL* b,
-//                           REAL* c,
-//                           REAL* u,
-//                           REAL* yy)
-// {
-//     int gidj = blockIdx.x*blockDim.x + threadIdx.x;
-//     int gidk = blockIdx.y*blockDim.y + threadIdx.y;
+__global__ void implicitX_tridag(const int outer,
+                          const int numX,
+			              const int numY,
+			              REAL* a,
+                          REAL* b,
+                          REAL* c,
+                          REAL* u,
+                          REAL* yy)
+{
+    int gidj = blockIdx.x*blockDim.x + threadIdx.x;
+    int gidk = blockIdx.y*blockDim.y + threadIdx.y;
 
-//     if (gidk < outer && gidj < numY) { 
-//         const int ind = gidk*numX*numY + gidj*numX;
-//         tridagPar(&a[ind], &b[ind], &c[ind],&u[ind],
-//             numX, &u[ind], &yy[gidk*numY+gidj]);
-//     }
-// }
+    if (gidk < outer && gidj < numY) { 
+        const int ind = gidk*numX*numY + gidj*numX;
+        tridag(&a[ind], &b[ind], &c[ind],&u[ind],
+            numX, &u[ind], &yy[gidk*numY*numX+gidj*numX]);
+    }
+}
+
+__device__ void tridag(
+    const REAL*   a,   // size [n]
+    const REAL*   b,   // size [n]
+    const REAL*  c,   // size [n]
+    const REAL*   r,   // size [n]
+    const int             n,
+          REAL*   u,   // size [n]
+          REAL*   uu   // size [n] temporary
+) {
+    int    i, offset;
+    REAL   beta;
+
+    u[0]  = r[0];
+    uu[0] = b[0];
+
+    for(i=1; i<n; i++) {
+        beta  = a[i] / uu[i-1];
+
+        uu[i] = b[i] - beta*c[i-1];
+        u[i]  = r[i] - beta*u[i-1];
+    }
+
+    // X) this is a backward recurrence
+    u[n-1] = u[n-1] / uu[n-1];
+    for(i=n-2; i>=0; i--) {
+        u[i] = (u[i] - c[i]*u[i+1]) / uu[i];
+    }
+}
 
 
 void   run_OrigCPU(  
@@ -263,7 +292,7 @@ void   run_OrigCPU(
     REAL* b = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
     REAL* c = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
     REAL* y = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
-    REAL* yy = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
+    REAL* yy = (REAL*) malloc(outer * numX * numY * sizeof(REAL));
 
      // ----- MAIN LOOP ------
 
@@ -323,7 +352,7 @@ void   run_OrigCPU(
     cudaMalloc((void**) &d_a, outer * numZ * numZ * sizeof(REAL));
     cudaMalloc((void**) &d_b, outer * numZ * numZ * sizeof(REAL));
     cudaMalloc((void**) &d_c, outer * numZ * numZ * sizeof(REAL));
-    cudaMalloc((void**) &d_yy, outer * numZ * numZ * sizeof(REAL));
+    cudaMalloc((void**) &d_yy, outer * numX * numY * sizeof(REAL));
 
 
 
@@ -400,28 +429,16 @@ void   run_OrigCPU(
 	        numX, numY, d_dtInv, d_myVarX, d_myDxx, d_a, d_b, d_c);
         cudaDeviceSynchronize();
 
-        // dim3 grid_2_2 (dim_y, dim_outer, 1);
-        // implicitX_tridag<<<grid_2_2, block_2>>>(outer, numX, numY, d_a, d_b, d_c, d_u, d_yy);
+        dim3 grid_2_2 (dim_y, dim_outer, 1);
+        implicitX_tridag<<<grid_2_2, block_2>>>(outer, numX, numY, d_a, d_b, d_c, d_u, d_yy);
+        cudaDeviceSynchronize();
 
 
         cudaMemcpy(a, d_a, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(b, d_b, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(c, d_c, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
-        //cudaMemcpy(u, d_u, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
-
-
-        for( unsigned k = 0; k < outer; ++ k ) {
-            for(unsigned j=0;j<numY;j++) {
-                // here yy should have size [numX]
-                tridagPar(&a[k*numX*numY+j*numX],
-                    &b[k*numX*numY+j*numX],
-                    &c[k*numX*numY+j*numX],
-                    &u[k*numX*numY+j*numX],
-                    numX,
-                    &u[k*numX*numY+j*numX],
-                    &yy[k*numY+j]);
-            }
-        }
+        cudaMemcpy(u, d_u, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+        cudaMemcpy(yy, d_yy, outer * numY * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
 
         // ---- end of implicit x
 
@@ -451,7 +468,7 @@ void   run_OrigCPU(
                     &y[k*numX*numY+i*numY],
                     numY,
                     &globs.myResult[k*numX*numY + i*numY],
-                    &yy[k*numX+i]);
+                    &yy[k*numX*numY+i*numY]);
             }
         }
         
