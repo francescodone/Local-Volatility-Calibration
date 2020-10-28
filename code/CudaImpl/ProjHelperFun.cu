@@ -42,12 +42,12 @@ void initGrid(  const REAL s0, const REAL alpha, const REAL nu,const REAL t,
  * Where x's size is n.
  */
 void initOperator(  REAL* x,
-                    REAL*** Dxx,
-                    unsigned xsize,
+                    REAL* Dxx, // [outer][numX][4]
+                    unsigned numX,
                     unsigned k,
 					int row_s
 ) {
-	const unsigned n = xsize;
+	const unsigned n = numX;
 
 	REAL dxl, dxu;
 
@@ -55,10 +55,10 @@ void initOperator(  REAL* x,
 	dxl		 =  0.0;
 	dxu		 =  x[k*row_s+1] - x[k*row_s+0];
 	
-	Dxx[k][0][0] =  0.0;
-	Dxx[k][0][1] =  0.0;
-	Dxx[k][0][2] =  0.0;
-        Dxx[k][0][3] =  0.0;
+	Dxx[k*numX*4+0*4+0] =  0.0;
+	Dxx[k*numX*4+0*4+1] =  0.0;
+	Dxx[k*numX*4+0*4+2] =  0.0;
+        Dxx[k*numX*4+0*4+3] =  0.0;
 	
 	//	standard case
 	for(unsigned i=1;i<n-1;i++)
@@ -66,20 +66,20 @@ void initOperator(  REAL* x,
 		dxl      = x[k*row_s+i]   - x[k*row_s+i-1];
 		dxu      = x[k*row_s+i+1] - x[k*row_s+i];
 
-		Dxx[k][i][0] =  2.0/dxl/(dxl+dxu);
-		Dxx[k][i][1] = -2.0*(1.0/dxl + 1.0/dxu)/(dxl+dxu);
-		Dxx[k][i][2] =  2.0/dxu/(dxl+dxu);
-        Dxx[k][i][3] =  0.0;
+		Dxx[k*numX*4+i*4+0] =  2.0/dxl/(dxl+dxu);
+		Dxx[k*numX*4+i*4+1] = -2.0*(1.0/dxl + 1.0/dxu)/(dxl+dxu);
+		Dxx[k*numX*4+i*4+2] =  2.0/dxu/(dxl+dxu);
+		Dxx[k*numX*4+i*4+3] =  0.0;
 	}
 
 	//	upper boundary
 	dxl		   =  x[k*row_s+n-1] - x[k*row_s+n-2];
 	dxu		   =  0.0;
 
-	Dxx[k][n-1][0] = 0.0;
-	Dxx[k][n-1][1] = 0.0;
-	Dxx[k][n-1][2] = 0.0;
-    Dxx[k][n-1][3] = 0.0;
+	Dxx[k*numX*4+(n-1)*4+0] = 0.0;
+	Dxx[k*numX*4+(n-1)*4+1] = 0.0;
+	Dxx[k*numX*4+(n-1)*4+2] = 0.0;
+	Dxx[k*numX*4+(n-1)*4+3] = 0.0;
 }
 
 

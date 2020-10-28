@@ -244,204 +244,312 @@ __global__ void updateParams(const int outer,
   }
 }
 
-void   run_OrigCPU(  
-                const unsigned int&   outer,
-                const unsigned int&   numX,
-                const unsigned int&   numY,
-                const unsigned int&   numT,
-                const REAL&           s0,
-                const REAL&           t, 
-                const REAL&           alpha, 
-                const REAL&           nu, 
-                const REAL&           beta,
-                      REAL*           res   // [outer] RESULT
-) {
+__global__ void rollback(const int outer,
+			 const int numT,
+			 const int g,
+			 const REAL* d_myTimeline,
+			 REAL* d_dtInv) {
+  int gidk = blockIdx.x*blockDim.x + threadIdx.x;
 
-     // printf("START");
+  if (gidk < outer) {
+    d_dtInv[gidk] = 1.0/(d_myTimeline[gidk*numT+g+1]-d_myTimeline[gidk*numT+g]);
+  }
+}
 
-    // calculating cuda dim
-    
-    int block_size = 16;
+__global__ void explicitX(const int outer,
+			  const int numX,
+			  const int numY,
+			  const REAL* d_dtInv,
+			  const REAL* d_myResult,
+			  const REAL* d_myVarX,
+			  const REAL* d_myDxx,
+			  REAL* d_u) {
+  int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+  int gidi = blockIdx.y*blockDim.y + threadIdx.y;
+  int gidj = blockIdx.z*blockDim.z + threadIdx.z;
 
-    dim3 block_2(block_size, block_size, 1);
+  if (gidk < outer && gidi < numX && gidj < numY) {
+    d_u[gidk*numX*numY+gidj*numX+gidi] = 
+       d_dtInv[gidk]*d_myResult[gidk*numX*numY + gidi*numY + gidj];
 
-    int  dim_outer = ceil( ((float) outer)/block_size); 
-    int  dim_x = ceil( ((float) numX)/block_size );
-    int  dim_y = ceil( ((float) numY)/block_size );
-
-    // ----- ARRAY EXPNASION ------
-
-    PrivGlobs    globs(numX, numY, numT, outer);
-    unsigned numZ = max(numX,numY);
-
-    REAL* strike = new REAL[outer];
-    REAL* dtInv = new REAL[outer];
-
-    REAL*** u = new REAL**[outer];
-    REAL*** v = new REAL**[outer];
-    
-    for(int k=0; k<outer; k++) {
-        u[k] = new REAL*[numY];
-        for (int idx = 0; idx<numY; idx++) {
-            u[k][idx] = new REAL[numX];
-        }
-        v[k] = new REAL*[numX];
-        for (int idx = 0; idx<numX; idx++) {
-            v[k][idx] = new REAL[numY];
-        }
+    if(gidi > 0) { 
+      d_u[gidk*numX*numY+gidj*numX+gidi] += 
+	0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+0] ) 
+	* d_myResult[gidk*numX*numY + (gidi-1)*numY + gidj];
     }
-
-    REAL** a = new REAL*[outer];
-    REAL** b = new REAL*[outer];
-    REAL** c = new REAL*[outer];
-    REAL** y = new REAL*[outer];
-    REAL** yy = new REAL*[outer];
-
-    for(int k=0; k<outer; k++) {
-        a[k] = new REAL[numZ];
-        b[k] = new REAL[numZ];
-        c[k] = new REAL[numZ];
-        y[k] = new REAL[numZ];
-        yy[k] = new REAL[numZ];
+    d_u[gidk*numX*numY+gidj*numX+gidi] += 
+      0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+1] )
+      * d_myResult[gidk*numX*numY + gidi*numY + gidj];
+    if(gidi < numX-1) {
+      d_u[gidk*numX*numY+gidj*numX+gidi] += 
+	0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+2] )
+	* d_myResult[gidk*numX*numY + (gidi+1)*numY + gidj];
     }
-
-    
-    // ----- MAIN LOOP ------
-
-
-    for( unsigned k = 0; k < outer; ++ k ) {
-      strike[k] = 0.001*k;
-      // value
-      initGrid(s0,alpha,nu,t, numX, numY, numT, k, globs);
-      initOperator(globs.myX,globs.myDxx, globs.sizeX, k, numX);
-      initOperator(globs.myY,globs.myDyy, globs.sizeY, k, numY);
-    }
+  }
+}
 
 
-    // --- beginning of setPayoff - cuda ----
+ void   run_OrigCPU(  
+		 const unsigned int&   outer,
+		 const unsigned int&   numX,
+		 const unsigned int&   numY,
+		 const unsigned int&   numT,
+		 const REAL&           s0,
+		 const REAL&           t, 
+		 const REAL&           alpha, 
+		 const REAL&           nu, 
+		 const REAL&           beta,
+		       REAL*           res   // [outer] RESULT
+ ) {
 
-    REAL *d_payoff, *d_strike, *d_myX, *d_my_result;
-    cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
-    cudaMalloc((void**) &d_strike, outer * sizeof(REAL));
-    cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
-    cudaMalloc((void**) &d_my_result, outer * numX * numY * sizeof(REAL));
+      // printf("START");
 
-    cudaMemcpy(d_strike, strike, outer * sizeof(REAL), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_my_result, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+     // calculating cuda dim
 
-    dim3 grid_2 (dim_x, dim_outer, 1);
-    initPayoff<<<grid_2, block_2>>>(outer, numX, d_payoff, d_myX, d_strike);
-    cudaDeviceSynchronize();
+     int block_size = 16;
 
-    dim3 grid_3 (dim_y, dim_x, outer);
-    updateGlobsMyResult<<<grid_3, block_2>>>(outer, numX, numY, d_payoff, d_my_result);
-    cudaDeviceSynchronize();
+     dim3 block_2(block_size, block_size, 1);
 
-    cudaMemcpy(globs.myResult, d_my_result, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+     int  dim_outer = ceil( ((float) outer)/block_size); 
+     int  dim_x = ceil( ((float) numX)/block_size );
+     int  dim_y = ceil( ((float) numY)/block_size );
+
+     // ----- ARRAY EXPNASION ------
+
+     PrivGlobs    globs(numX, numY, numT, outer);
+     unsigned numZ = max(numX,numY);
+
+     REAL* strike = new REAL[outer];
+     REAL* dtInv = (REAL*) malloc(outer*sizeof(REAL));
+
+     REAL* u = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
+     REAL*** v = new REAL**[outer];
+
+     for(int k=0; k<outer; k++) {
+       //u[k] = new REAL*[numY];
+       //for (int idx = 0; idx<numY; idx++) {
+       //    u[k][idx] = new REAL[numX];
+       //}
+	 v[k] = new REAL*[numX];
+	 for (int idx = 0; idx<numX; idx++) {
+	     v[k][idx] = new REAL[numY];
+	 }
+     }
+
+     REAL** a = new REAL*[outer];
+     REAL** b = new REAL*[outer];
+     REAL** c = new REAL*[outer];
+     REAL** y = new REAL*[outer];
+     REAL** yy = new REAL*[outer];
+
+     for(int k=0; k<outer; k++) {
+	 a[k] = new REAL[numZ];
+	 b[k] = new REAL[numZ];
+	 c[k] = new REAL[numZ];
+	 y[k] = new REAL[numZ];
+	 yy[k] = new REAL[numZ];
+     }
 
 
-    cudaFree(d_payoff);
-    cudaFree(d_strike);
-    cudaFree(d_myX);
-    cudaFree(d_my_result);
-    // free(h_payoff);
-
-    // --- end of setPayoff - cuda ----
+     // ----- MAIN LOOP ------
 
 
+     for( unsigned k = 0; k < outer; ++ k ) {
+       strike[k] = 0.001*k;
+       // value
+       initGrid(s0,alpha,nu,t, numX, numY, numT, k, globs);
+       initOperator(globs.myX,globs.myDxx, globs.sizeX, k, numX);
+       initOperator(globs.myY,globs.myDyy, globs.sizeY, k, numY);
+     }
 
-    for(int g = globs.sizeT-2;g>=0;--g) { // seq
+
+     // --- beginning of setPayoff - cuda ----
+
+     REAL *d_payoff, *d_strike, *d_myX, *d_my_result;
+     cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
+     cudaMalloc((void**) &d_strike, outer * sizeof(REAL));
+     cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
+     cudaMalloc((void**) &d_my_result, outer * numX * numY * sizeof(REAL));
+
+     cudaMemcpy(d_strike, strike, outer * sizeof(REAL), cudaMemcpyHostToDevice);
+     cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
+     cudaMemcpy(d_my_result, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+
+     dim3 grid_2 (dim_x, dim_outer, 1);
+     initPayoff<<<grid_2, block_2>>>(outer, numX, d_payoff, d_myX, d_strike);
+     cudaDeviceSynchronize();
+
+     dim3 grid_3 (dim_y, dim_x, outer);
+     updateGlobsMyResult<<<grid_3, block_2>>>(outer, numX, numY, d_payoff, d_my_result);
+     cudaDeviceSynchronize();
+
+     cudaMemcpy(globs.myResult, d_my_result, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
 
 
-      REAL *d_myX, *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY;
-      cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
-      cudaMalloc((void**) &d_myY, outer * numY * sizeof(REAL));
-      cudaMalloc((void**) &d_myTimeline, outer * numT * sizeof(REAL));
-      cudaMalloc((void**) &d_myVarX, outer * numX * numY * sizeof(REAL));
-      cudaMalloc((void**) &d_myVarY, outer * numX * numY * sizeof(REAL));
+     cudaFree(d_payoff);
+     cudaFree(d_strike);
+     cudaFree(d_myX);
+     cudaFree(d_my_result);
+     // free(h_payoff);
 
-      cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
-      cudaMemcpy(d_myY, globs.myY, outer * numY * sizeof(REAL), cudaMemcpyHostToDevice);
-      cudaMemcpy(d_myTimeline, globs.myTimeline, outer * numT * sizeof(REAL), cudaMemcpyHostToDevice);
-      cudaMemcpy(d_myVarX, globs.myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
-      cudaMemcpy(d_myVarY, globs.myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+     // --- end of setPayoff - cuda ----
 
-      
-      // --- updateParams ---      
-      dim3 grid_4 (outer, numX, numY);
-      updateParams<<<grid_4, block_2>>>(outer,
-                                        numX,
-                                        numY,
-					numT,
-                                        g,
-                                        alpha,
-                                        beta,
-                                        nu,
-                                        d_myX,
-                                        d_myY,
-                                        d_myTimeline,
-                                        d_myVarX,
-                                        d_myVarY);
-      
-      cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
-      cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-      cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
-      cudaMemcpy(globs.myVarX, d_myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-      cudaMemcpy(globs.myVarY, d_myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-      
-      cudaFree(d_myX);
-      cudaFree(d_myY);
-      cudaFree(d_myTimeline);
+
+
+     for(int g = globs.sizeT-2;g>=0;--g) { // seq
+
+
+       REAL *d_myX, *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY;
+       cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
+       cudaMalloc((void**) &d_myY, outer * numY * sizeof(REAL));
+       cudaMalloc((void**) &d_myTimeline, outer * numT * sizeof(REAL));
+       cudaMalloc((void**) &d_myVarX, outer * numX * numY * sizeof(REAL));
+       cudaMalloc((void**) &d_myVarY, outer * numX * numY * sizeof(REAL));
+
+       cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
+       cudaMemcpy(d_myY, globs.myY, outer * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+       cudaMemcpy(d_myTimeline, globs.myTimeline, outer * numT * sizeof(REAL), cudaMemcpyHostToDevice);
+       cudaMemcpy(d_myVarX, globs.myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+       cudaMemcpy(d_myVarY, globs.myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+
+
+       // --- updateParams ---      
+       dim3 grid_4 (outer, numX, numY);
+       updateParams<<<grid_4, block_2>>>(outer,
+					 numX,
+					 numY,
+					 numT,
+					 g,
+					 alpha,
+					 beta,
+					 nu,
+					 d_myX,
+					 d_myY,
+					 d_myTimeline,
+					 d_myVarX,
+					 d_myVarY);
+       cudaDeviceSynchronize();
+
+       cudaMemcpy(globs.myX, d_myX, outer * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
+       cudaMemcpy(globs.myY, d_myY, outer * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+       //cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
+       cudaMemcpy(globs.myVarX, d_myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+       cudaMemcpy(globs.myVarY, d_myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+
+       cudaFree(d_myX);
+       cudaFree(d_myY);
+       //cudaFree(d_myTimeline);
+       cudaFree(d_myVarX);
+       cudaFree(d_myVarY);
+
+       /*
+       // --- updateParams ---    
+       for( unsigned k = 0; k < outer; ++ k ) {
+	 for(unsigned i=0;i<globs.sizeX;++i) {
+	   for(unsigned j=0;j<globs.sizeY;++j) {
+	     globs.myVarX[k*numX*numY+i*numY+j] =
+	       exp(2.0*(  beta*log(globs.myX[k*numX+i])
+			  + globs.myY[k*numY+j]
+			  - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
+		   );
+	     globs.myVarY[k*numX*numY+i*numY+j] =
+	       exp(2.0*(  alpha*log(globs.myX[k*numX+i])
+			  + globs.myY[k*numY+j]
+			  - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
+		   ); // nu*nu
+	   }
+	 }
+       }
+       */
+
+	 // --- rollback ---
+
+       REAL* d_dtInv;
+       cudaMalloc((void**) &d_dtInv, outer * sizeof(REAL));
+       cudaMemcpy(d_dtInv, dtInv, outer * sizeof(REAL), cudaMemcpyHostToDevice);
+
+       rollback<<<outer, block_2>>>(outer, numT, g, d_myTimeline, d_dtInv);
+       cudaDeviceSynchronize();
+       /*
+       for( unsigned k = 0; k < outer; ++ k ) {
+	 dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
+       }
+       */
+
+       //cudaMemcpy(dtInv, d_dtInv, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
+       //cudaFree(d_dtInv);
+
+       cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
+       cudaFree(d_myTimeline);
+
+
+       //REAL *d_myResult, *d_myDxx, *d_u;
+
+
+
+
+       cudaDeviceSynchronize();
+       REAL *d_myResult, *d_myDxx, *d_u;
+       cudaMalloc((void**) &d_myResult, outer * numX * numY * sizeof(REAL));
+       cudaMalloc((void**) &d_myDxx,    outer * numX *    4 * sizeof(REAL));
+       cudaMalloc((void**) &d_u,        outer * numX * numY * sizeof(REAL));
+
+       cudaMemcpy(d_myResult, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+       cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
+       cudaMemcpy(d_u,        u,              outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+       
+       /*
+       dim3 grid_5 (outer, numX, numY);      
+       explicitX<<<grid_5, block_2>>>(outer,
+				     numX,
+				     numY,
+				     d_dtInv,
+				     d_myResult,
+				     d_myVarX,
+				     d_myDxx,
+				     d_u);
+       */
+      cudaDeviceSynchronize();
+
+      cudaMemcpy(globs.myResult, d_myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost); 
+      cudaFree(d_myResult);
+      cudaMemcpy(globs.myVarX,   d_myVarX,   outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
       cudaFree(d_myVarX);
-      cudaFree(d_myVarY);
+      cudaMemcpy(globs.myDxx,    d_myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaFree(d_myDxx);
+      cudaMemcpy(u,              d_u,        outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaFree(d_u);
+      cudaMemcpy(dtInv,          d_dtInv,    outer               * sizeof(REAL), cudaMemcpyDeviceToHost);
+      cudaFree(d_dtInv);
 
-      /*
-      // --- updateParams ---    
+      cudaDeviceSynchronize();
+      
+      
+      //	explicit x
+      // do matrix transposition for u (after kernel is executed)
       for( unsigned k = 0; k < outer; ++ k ) {
-	for(unsigned i=0;i<globs.sizeX;++i) {
-	  for(unsigned j=0;j<globs.sizeY;++j) {
-	    globs.myVarX[k*numX*numY+i*numY+j] =
-	      exp(2.0*(  beta*log(globs.myX[k*numX+i])
-			 + globs.myY[k*numY+j]
-			 - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
-		  );
-	    globs.myVarY[k*numX*numY+i*numY+j] =
-	      exp(2.0*(  alpha*log(globs.myX[k*numX+i])
-			 + globs.myY[k*numY+j]
-			 - 0.5*nu*nu*globs.myTimeline[k*numT+g] )
-		  ); // nu*nu
+	for(unsigned i=0;i<numX;i++) {
+	  for(unsigned j=0;j<numY;j++) {
+	    u[k*numX*numY+j*numX+i] = 
+	      dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
+	    
+	    if(i > 0) { 
+	      u[k*numX*numY+j*numX+i] += 
+		0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0] ) 
+		* globs.myResult[k*numX*numY + (i-1)*numY + j];
+	    }
+	    u[k*numX*numY+j*numX+i] +=
+	      0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1] )
+	      * globs.myResult[k*numX*numY + i*numY + j];
+	    if(i < numX-1) {
+	      u[k*numX*numY+j*numX+i] +=
+		0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2] )
+		* globs.myResult[k*numX*numY + (i+1)*numY + j];
+	    }
 	  }
 	}
       }
-      */
-
-        // --- rollback ---
-
-        for( unsigned k = 0; k < outer; ++ k ) {
-            dtInv[k] = 1.0/(globs.myTimeline[k*numT+g+1]-globs.myTimeline[k*numT+g]);
-        }
-
-        //	explicit x
-        // do matrix transposition for u (after kernel is executed)
-        for( unsigned k = 0; k < outer; ++ k ) {
-            for(unsigned i=0;i<numX;i++) {
-                for(unsigned j=0;j<numY;j++) {
-                    u[k][j][i] = dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
-
-                    if(i > 0) { 
-                    u[k][j][i] += 0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k][i][0] ) 
-                                    * globs.myResult[k*numX*numY + (i-1)*numY + j];
-                    }
-                    u[k][j][i]  +=  0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k][i][1] )
-                                    * globs.myResult[k*numX*numY + i*numY + j];
-                    if(i < numX-1) {
-                        u[k][j][i] += 0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k][i][2] )
-                                        * globs.myResult[k*numX*numY + (i+1)*numY + j];
-                    }
-                }
-            }
-        }
+      
 
         //	explicit y
         // matrix transposition and/or loop interchange?
@@ -451,16 +559,16 @@ void   run_OrigCPU(
                     v[k][i][j] = 0.0;
 
                     if(j > 0) {
-                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k][j][0] )
+                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+0] )
                                 *  globs.myResult[k*numX*numY + i*numY + j-1];
                     }
-                    v[k][i][j]  +=   ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k][j][1] )
+                    v[k][i][j]  +=   ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+1] )
                                 *  globs.myResult[k*numX*numY + i*numY + j];
                     if(j < numY-1) {
-                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k][j][2] )
+                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+2] )
                                 *  globs.myResult[k*numX*numY + i*numY + j+1];
                     }
-                    u[k][j][i] += v[k][i][j]; 
+                    u[k*numX*numY+j*numX+i] += v[k][i][j]; 
                 }
             }
         }
@@ -469,12 +577,12 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned j=0;j<numY;j++) {
                 for(unsigned i=0;i<numX;i++) {  // here a, b,c should have size [numX]
-                    a[k][i] =		 - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k][i][0]);
-                    b[k][i] = dtInv[k] - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k][i][1]);
-                    c[k][i] =		 - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k][i][2]);
+                    a[k][i] =		 - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0]);
+                    b[k][i] = dtInv[k] - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1]);
+                    c[k][i] =		 - 0.5*(0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2]);
                 }
                 // here yy should have size [numX]
-                tridagPar(a[k],b[k],c[k],u[k][j],numX,u[k][j],yy[k]);
+                tridagPar(a[k],b[k],c[k],&u[k*numX*numY+j*numX],numX,&u[k*numX*numY+j*numX],yy[k]);
             }
         }
 
@@ -482,12 +590,12 @@ void   run_OrigCPU(
         for( unsigned k = 0; k < outer; ++ k ) {
             for(unsigned i=0;i<numX;i++) { 
                 for(unsigned j=0;j<numY;j++) {  // here a, b, c should have size [numY]
-                    a[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k][j][0]);
-                    b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k][j][1]);
-                    c[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k][j][2]);
+                    a[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+0]);
+                    b[k][j] = dtInv[k] - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+1]);
+                    c[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+2]);
                 }
                 for(unsigned j=0;j<numY;j++)
-                    y[k][j] = dtInv[k]*u[k][j][i] - 0.5*v[k][i][j];
+                    y[k][j] = dtInv[k]*u[k*numX*numY+j*numX+i] - 0.5*v[k][i][j];
 
                 // here yy should have size [numY]
                 tridagPar(a[k],b[k],c[k],y[k],numY,&globs.myResult[k*numX*numY + i*numY],yy[k]);

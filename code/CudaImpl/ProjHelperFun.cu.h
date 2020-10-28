@@ -27,8 +27,8 @@ struct PrivGlobs {
     REAL*     myVarY; // [outer][numX][numY]
 
     //	operators
-    REAL***   myDxx;  // [outer][numX][4]
-    REAL***   myDyy;  // [outer][numY][4]
+    REAL*     myDxx;  // [outer][numX][4]
+    REAL*     myDyy;  // [outer][numY][4]
 
     unsigned sizeX;
     unsigned sizeY;
@@ -51,21 +51,8 @@ struct PrivGlobs {
         this->myX = (REAL*) malloc(outer*numX*sizeof(REAL));
         this->myY = (REAL*) malloc(outer*numY*sizeof(REAL));
 
-        this->myDxx = new REAL**[outer];
-        for(int k=0; k<outer; k++) {
-            this->myDxx[k] = new REAL*[numX];
-            for(int l=0; l<numX; l++) {
-                this->myDxx[k][l] = new REAL[4];
-            }
-        }
-
-        this->myDyy = new REAL**[outer];
-        for(int k=0; k<outer; k++) {
-            this->myDyy[k] = new REAL*[numY];
-            for(int l=0; l<numY; l++) {
-                this->myDyy[k][l] = new REAL[4];
-            }
-        }
+        this->myDxx = (REAL*) malloc(outer*numX*4*sizeof(REAL));
+	this->myDyy = (REAL*) malloc(outer*numY*4*sizeof(REAL));
 
         this->myTimeline = (REAL*) malloc(outer*numT*sizeof(REAL));
         
@@ -86,8 +73,8 @@ void initGrid(  const REAL s0, const REAL alpha, const REAL nu,const REAL t,
             );
 
 void initOperator(  REAL* x, 
-                    REAL*** Dxx,
-                    unsigned xsize,
+                    REAL* Dxx, // [outer][numX][4]
+                    unsigned numX,
                     unsigned k,
                     int row_s
                  );
