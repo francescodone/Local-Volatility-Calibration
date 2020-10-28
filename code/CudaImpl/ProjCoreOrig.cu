@@ -101,6 +101,48 @@ __global__ void explicitX(const int outer,
     }
 }
 
+// outer,numX, numY, d_myResult, d_myVarY, d_myDyy, d_v, d_u)
+
+__global__ void explicitY(const int outer,
+	                      const int numX,
+			              const int numY,
+			              const REAL* d_myResult,
+			              const REAL* d_myVarY,
+			              const REAL* d_myDyy,
+			              REAL* d_v,
+                          REAL* d_u) 
+{
+    int gidk = blockIdx.z*blockDim.z + threadIdx.z;
+    int gidj = blockIdx.y*blockDim.y + threadIdx.y;
+    int gidi = blockIdx.x*blockDim.x + threadIdx.x;
+
+    if (gidk < outer && gidi < numX && gidj < numY) {
+
+        int v_ind = gidk*numX*numY + gidi*numY + gidj;
+        int my_vary_ind = gidk*numX*numY + gidi*numY + gidj;
+        int my_dyy_ind = gidk*numY*4 + gidj*4;
+        int my_result_ind = gidk*numX*numY + gidi*numY + gidj;
+
+        d_v[v_ind] = 0.0;
+
+        if (gidj > 0) {
+            d_v[v_ind] += (0.5 * d_myVarY[my_vary_ind] * d_myDyy[my_dyy_ind])
+                * d_myResult[my_result_ind-1];
+        }
+
+        d_v[v_ind] += (0.5 * d_myVarY[my_vary_ind] * d_myDyy[my_dyy_ind+1] )
+            * d_myResult[my_result_ind];
+        
+        if(gidj < numY-1) {
+            d_v[v_ind] +=  (0.5 * d_myVarY[my_vary_ind] * d_myDyy[my_dyy_ind+2] )
+            *  d_myResult[my_result_ind+1];
+        }
+
+        d_u[gidk*numX*numY + gidj*numX + gidi] += d_v[v_ind]; 
+
+    }
+}
+
 
 void   run_OrigCPU(  
 		 const unsigned int&   outer,
@@ -137,18 +179,7 @@ void   run_OrigCPU(
     REAL* dtInv = (REAL*) malloc(outer*sizeof(REAL));
 
     REAL* u = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
-    REAL*** v = new REAL**[outer];
-
-    for(int k=0; k<outer; k++) {
-    //u[k] = new REAL*[numY];
-    //for (int idx = 0; idx<numY; idx++) {
-    //    u[k][idx] = new REAL[numX];
-    //}
-        v[k] = new REAL*[numX];
-        for (int idx = 0; idx<numX; idx++) {
-            v[k][idx] = new REAL[numY];
-        }
-    }
+    REAL* v = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
 
     REAL** a = new REAL*[outer];
     REAL** b = new REAL*[outer];
@@ -207,15 +238,18 @@ void   run_OrigCPU(
      // --- end of setPayoff - cuda ----
 
 
-    REAL *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY, *d_myResult, *d_myDxx, *d_u, *d_dtInv;
+    REAL *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY, *d_myResult, *d_myDxx, *d_myDyy, *d_u, *d_v, *d_dtInv;
     cudaMalloc((void**) &d_myY, outer * numY * sizeof(REAL));
     cudaMalloc((void**) &d_myTimeline, outer * numT * sizeof(REAL));
     cudaMalloc((void**) &d_myVarX, outer * numX * numY * sizeof(REAL));
     cudaMalloc((void**) &d_myVarY, outer * numX * numY * sizeof(REAL));
     cudaMalloc((void**) &d_myResult, outer * numX * numY * sizeof(REAL));
     cudaMalloc((void**) &d_myDxx,    outer * numX *    4 * sizeof(REAL));
+    cudaMalloc((void**) &d_myDyy,    outer * numY *    4 * sizeof(REAL));
     cudaMalloc((void**) &d_u,        outer * numX * numY * sizeof(REAL));
+    cudaMalloc((void**) &d_v,        outer * numX * numY * sizeof(REAL));
     cudaMalloc((void**) &d_dtInv, outer * sizeof(REAL));
+
 
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
@@ -225,6 +259,7 @@ void   run_OrigCPU(
         cudaMemcpy(d_myTimeline, globs.myTimeline, outer * numT * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myVarX, globs.myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myVarY, globs.myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
+        cudaMemcpy(d_myDyy, globs.myDyy, outer * numY * 4 * sizeof(REAL), cudaMemcpyHostToDevice);
 
 
     // --- updateParams ---      
@@ -261,9 +296,7 @@ void   run_OrigCPU(
         cudaMemcpy(d_myResult, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_u,        u,              outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
-       
-       
-       //dim3 grid_5 (outer, numX, numY);      
+           
        explicitX<<<grid_3, block_2>>>(outer,
 				     numX,
 				     numY,
@@ -274,65 +307,19 @@ void   run_OrigCPU(
 				     d_u);
        
 
-        // cudaDeviceSynchronize();
+        cudaDeviceSynchronize();
 
-        // cudaMemcpy(globs.myResult, d_myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost); 
-        // cudaMemcpy(globs.myVarX,   d_myVarX,   outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        // cudaMemcpy(globs.myDxx,    d_myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(u,              d_u,        outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+    // ------ explicit y
 
-        // cudaDeviceSynchronize();
-      
-      
-        //	explicit x
-        // do matrix transposition for u (after kernel is executed)
-        // for( unsigned k = 0; k < outer; ++ k ) {
-        //     for(unsigned i=0;i<numX;i++) {
-        //         for(unsigned j=0;j<numY;j++) {
-        //             u[k*numX*numY+j*numX+i] = 
-        //                 dtInv[k]*globs.myResult[k*numX*numY + i*numY + j];
+        dim3 grid_3_2 (dim_x, dim_y, outer);
+        explicitY<<<grid_3_2, block_2>>>(outer,
+	        numX, numY, d_myResult, d_myVarY, d_myDyy, d_v, d_u);
+        cudaDeviceSynchronize();
+        
+        cudaMemcpy(u, d_u, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+        cudaMemcpy(v, d_v, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
 
-        //             if(i > 0) { 
-        //                 u[k*numX*numY+j*numX+i] += 
-        //                     0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+0] ) 
-        //                     * globs.myResult[k*numX*numY + (i-1)*numY + j];
-        //             }
-
-        //             u[k*numX*numY+j*numX+i] +=
-        //                 0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+1] )
-        //                 * globs.myResult[k*numX*numY + i*numY + j];
-
-        //             if(i < numX-1) {
-        //                 u[k*numX*numY+j*numX+i] +=
-        //                     0.5*( 0.5*globs.myVarX[k*numX*numY+i*numY+j]*globs.myDxx[k*numX*4+i*4+2] )
-        //                     * globs.myResult[k*numX*numY + (i+1)*numY + j];
-        //             }
-        //         }
-        //     }
-        // }
-      
-
-        //	explicit y
-        // matrix transposition and/or loop interchange?
-        for( unsigned k = 0; k < outer; ++ k ) {
-            for(unsigned j=0;j<numY;j++) {
-                for(unsigned i=0;i<numX;i++) {
-                    v[k][i][j] = 0.0;
-
-                    if(j > 0) {
-                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+0] )
-                                *  globs.myResult[k*numX*numY + i*numY + j-1];
-                    }
-                    v[k][i][j]  +=   ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+1] )
-                                *  globs.myResult[k*numX*numY + i*numY + j];
-                    if(j < numY-1) {
-                    v[k][i][j] +=  ( 0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+2] )
-                                *  globs.myResult[k*numX*numY + i*numY + j+1];
-                    }
-                    u[k*numX*numY+j*numX+i] += v[k][i][j]; 
-                }
-            }
-        }
+    // implicit x
 
         //	implicit x
         for( unsigned k = 0; k < outer; ++ k ) {
@@ -356,7 +343,7 @@ void   run_OrigCPU(
                     c[k][j] =		 - 0.5*(0.5*globs.myVarY[k*numX*numY+i*numY+j]*globs.myDyy[k*numY*4+j*4+2]);
                 }
                 for(unsigned j=0;j<numY;j++)
-                    y[k][j] = dtInv[k]*u[k*numX*numY+j*numX+i] - 0.5*v[k][i][j];
+                    y[k][j] = dtInv[k]*u[k*numX*numY+j*numX+i] - 0.5*v[k*numX*numY+i*numY+j];
 
                 // here yy should have size [numY]
                 tridagPar(a[k],b[k],c[k],y[k],numY,&globs.myResult[k*numX*numY + i*numY],yy[k]);
