@@ -14,7 +14,7 @@ Folder `CpuTransformedImpl' contains the transformed CPU program which resembles
     -- `ProjCoreOrig.cpp'  contains the transformed core functions 
     -- `ProjHelperFun.cpp' contains the functions that compute the input parameters
 
-Folder `CpuParImpl' contains the parallelized CPU proram:
+Folder `CpuParImpl' contains the parallelized CPU program
     -- `ProjectMain.cpp'   contains the main function
     -- `ProjCoreOrig.cpp'  contains the core functions with parallelized run_OrigCPU function
     -- `ProjHelperFun.cpp' contains the functions that compute the input parameters
