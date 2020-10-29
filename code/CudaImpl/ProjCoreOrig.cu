@@ -37,12 +37,12 @@ __global__ void matTransposeTiled(REAL* A, REAL* B, int rowsA, int colsA, int ou
 
 // --- setPayoff -----
 
-__global__ void initPayoff(int outer, int numX, REAL* payoff_cuda, REAL* myX, REAL* strike) {
+__global__ void initPayoff(int outer, int numX, REAL* payoff_cuda, REAL* myX) {
     int gidx = blockIdx.x*blockDim.x + threadIdx.x;
     int gidy = blockIdx.y*blockDim.y + threadIdx.y;
 
     if (gidy < outer && gidx < numX) {
-        payoff_cuda[gidy*numX+gidx] = max(myX[gidy*numX+gidx]-strike[gidy], (REAL)0.0);
+        payoff_cuda[gidy*numX+gidx] = max(myX[gidy*numX+gidx]-gidy*0.001, (REAL)0.0);
     }
 }
 
@@ -349,14 +349,10 @@ void   run_OrigCPU(
     PrivGlobs    globs(numX, numY, numT, outer);
     unsigned numZ = max(numX,numY);
 
-    REAL* strike = new REAL[outer];
-
-     // ----- MAIN LOOP ------
+    // ----- MAIN LOOP ------
 
 
     for( unsigned k = 0; k < outer; ++ k ) {
-        strike[k] = 0.001*k;
-        // value
         initGrid(s0,alpha,nu,t, numX, numY, numT, k, globs);
         initOperator(globs.myX,globs.myDxx, globs.sizeX, k, numX);
         initOperator(globs.myY,globs.myDyy, globs.sizeY, k, numY);
@@ -365,18 +361,16 @@ void   run_OrigCPU(
 
   // --- beginning of setPayoff - cuda ----
 
-    REAL *d_payoff, *d_strike, *d_myX, *d_my_result;
+    REAL *d_payoff, *d_myX, *d_my_result;
     cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
-    cudaMalloc((void**) &d_strike, outer * sizeof(REAL));
     cudaMalloc((void**) &d_myX, outer * numX * sizeof(REAL));
     cudaMalloc((void**) &d_my_result, outer * numX * numY * sizeof(REAL));
 
-    cudaMemcpy(d_strike, strike, outer * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_my_result, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
 
     dim3 grid_2 (dim_x, dim_outer, 1);
-    initPayoff<<<grid_2, block_2>>>(outer, numX, d_payoff, d_myX, d_strike);
+    initPayoff<<<grid_2, block_2>>>(outer, numX, d_payoff, d_myX);
     cudaDeviceSynchronize();
 
     dim3 grid_3 (dim_y, dim_x, outer);
@@ -384,7 +378,6 @@ void   run_OrigCPU(
     cudaDeviceSynchronize();
 
     cudaFree(d_payoff);
-    cudaFree(d_strike);
 
      // --- end of setPayoff - cuda ----
 
