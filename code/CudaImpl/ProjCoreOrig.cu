@@ -28,6 +28,13 @@ void   run_OrigCPU(
     int  dim_x = ceil( ((float) numX)/block_size );
     int  dim_y = ceil( ((float) numY)/block_size );
 
+    dim3 grid_2 (dim_x, dim_outer, 1);
+    dim3 grid_2_2 (dim_y, dim_outer, 1);
+    dim3 grid_3 (dim_y, dim_x, outer);
+    dim3 grid_3_2 (dim_x, dim_y, outer);
+
+    unsigned int num_blocks_outer = ((outer + (full_block_size - 1)) / full_block_size);
+
     // ----- ARRAY EXPNASION ------
 
     PrivGlobs    globs(numX, numY, numT, outer);
@@ -42,8 +49,7 @@ void   run_OrigCPU(
         initOperator(globs.myY,globs.myDyy, globs.sizeY, k, numY);
     }
 
-
-  // --- beginning of setPayoff - cuda ----
+    // allocating memory for setPayoff
 
     REAL *d_payoff, *d_myX, *d_my_result;
     cudaMalloc((void**) &d_payoff, outer * numX * sizeof(REAL));
@@ -53,17 +59,17 @@ void   run_OrigCPU(
     cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_my_result, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
 
-    dim3 grid_2 (dim_x, dim_outer, 1);
+    // ---- setPayoff ----
+    
     initPayoff<<<grid_2, block_2>>>(outer, numX, d_payoff, d_myX);
     cudaDeviceSynchronize();
 
-    dim3 grid_3 (dim_y, dim_x, outer);
     updateGlobsMyResult<<<grid_3, block_2>>>(outer, numX, numY, d_payoff, d_my_result);
     cudaDeviceSynchronize();
 
     cudaFree(d_payoff);
 
-     // --- end of setPayoff - cuda ----
+     // --- end of setPayoff ----
 
 
     REAL *d_myY, *d_myTimeline, *d_myVarX, *d_myVarY, *d_myDxx, *d_myDyy, *d_u, *d_v, *d_dtInv;
@@ -84,57 +90,31 @@ void   run_OrigCPU(
     cudaMalloc((void**) &d_yy, outer * numX * numY * sizeof(REAL));
     cudaMalloc((void**) &d_y, outer * numX * numY * sizeof(REAL));
 
-    cudaMemcpy(d_myX, globs.myX, outer * numX * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myY, globs.myY, outer * numY * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myTimeline, globs.myTimeline, outer * numT * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myVarX, globs.myVarX, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myVarY, globs.myVarY, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myDyy, globs.myDyy, outer * numY * 4 * sizeof(REAL), cudaMemcpyHostToDevice);
-
     cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
+
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
 
-
         // --- updateParams ---      
-        updateParams<<<grid_3, block_2>>>(outer,
-            numX,
-            numY,
-            numT,
-            g,
-            alpha,
-            beta,
-            nu,
-            d_myX,
-            d_myY,
-            d_myTimeline,
-            d_myVarX,
-            d_myVarY);
-
+        updateParams<<<grid_3, block_2>>>(outer, numX, numY, numT, g, alpha,
+            beta, nu, d_myX, d_myY, d_myTimeline, d_myVarX, d_myVarY);
         cudaDeviceSynchronize();
 
-
 	    // --- rollback ---
-        unsigned int num_blocks_outer = ((outer + (full_block_size - 1)) / full_block_size);
         rollback<<<num_blocks_outer, full_block_size>>>(outer, numT, g, d_myTimeline, d_dtInv);
         cudaDeviceSynchronize();   
 
-
         // ---- explicit x
-        explicitX<<<grid_3, block_2>>>(outer,
-				     numX,
-				     numY,
-				     d_dtInv,
-				     d_my_result,
-				     d_myVarX,
-				     d_myDxx,
-				     d_u);
-       
-
+        explicitX<<<grid_3, block_2>>>(outer, numX, numY, d_dtInv, d_my_result,
+			d_myVarX, d_myDxx, d_u);
         cudaDeviceSynchronize();
 
         // ------ explicit y
-        dim3 grid_3_2 (dim_x, dim_y, outer);
         explicitY<<<grid_3_2, block_2>>>(outer,
 	        numX, numY, d_my_result, d_myVarY, d_myDyy, d_v, d_u);
         cudaDeviceSynchronize();
@@ -143,10 +123,8 @@ void   run_OrigCPU(
         implicitX<<<grid_3_2, block_2>>>(outer, numX, numY, d_dtInv, d_myVarX, d_myDxx, d_a, d_b, d_c);
         cudaDeviceSynchronize();
 
-        dim3 grid_2_2 (dim_y, dim_outer, 1);
         implicitX_tridag<<<grid_2_2, block_2>>>(outer, numX, numY, d_a, d_b, d_c, d_u, d_yy);
         cudaDeviceSynchronize();
-
 
         //	------- implicit y
         implicitY_1<<<grid_3, block_2>>>(outer,numX, numY, d_dtInv, d_myVarY, d_myDyy, d_a, d_b, d_c);
@@ -162,6 +140,7 @@ void   run_OrigCPU(
     }
 
     cudaMemcpy(globs.myResult, d_my_result, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+
     for( unsigned k = 0; k < outer; ++ k ) { 
         res[k] = globs.myResult[k*numX*numY + globs.myXindex[k]*numY + globs.myYindex[k]];
     }
@@ -171,8 +150,18 @@ void   run_OrigCPU(
     cudaFree(d_myTimeline);
     cudaFree(d_myVarX);
     cudaFree(d_myVarY);
+    cudaFree(d_myDxx);
+    cudaFree(d_myDyy);
     cudaFree(d_dtInv);
-
+    cudaFree(d_my_result);
+    
+    cudaFree(d_u);
+    cudaFree(d_v);
+    cudaFree(d_a);
+    cudaFree(d_b);
+    cudaFree(d_c);
+    cudaFree(d_yy);
+    cudaFree(d_y);
 }
 
 //#endif // PROJ_CORE_ORIG
