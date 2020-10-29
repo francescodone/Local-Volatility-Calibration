@@ -328,3 +328,75 @@ __device__ void tridag(
         u[i] = (u[i] - c[i]*u[i+1]) / uu[i];
     }
 }
+
+__global__ void initGridKernel(const REAL s0, const REAL alpha, const REAL nu,const REAL t, 
+                const unsigned numX, const unsigned numY, const unsigned numT, const unsigned outer, PrivGlobsCuda globsCuda   
+) {
+    
+    int ido = blockIdx.x*blockDim.x + threadIdx.x;
+
+    if (ido < outer) {
+        for(unsigned i=0;i<numT;++i)
+            globsCuda.myTimeline[ido*numT+i] = t*i/(numT-1);
+
+        const REAL stdX = 20.0*alpha*s0*sqrt(t);
+        const REAL dx = stdX/numX;
+        globsCuda.myXindex[ido] = static_cast<unsigned>(s0/dx) % numX;
+
+        for(unsigned i=0;i<numX;++i)
+            globsCuda.myX[ido*numX+i] = i*dx - globsCuda.myXindex[ido]*dx + s0;
+
+        const REAL stdY = 10.0*nu*sqrt(t);
+        const REAL dy = stdY/numY;
+        const REAL logAlpha = log(alpha);
+        globsCuda.myYindex[ido] = static_cast<unsigned>(numY/2.0);
+
+        for(unsigned i=0;i<numY;++i)
+            globsCuda.myY[ido*numY+i] = i*dy - globsCuda.myYindex[ido]*dy + logAlpha;
+    } 
+}
+
+__global__ void initOperatorKernel(  REAL* x,
+                    REAL* Dxx, // [outer][numX][4]
+                    unsigned numX,
+                    unsigned outer,
+					int row_s) 
+{
+	int k = blockIdx.x*blockDim.x + threadIdx.x;
+
+    if (k < outer) {
+        const unsigned n = numX;
+
+        REAL dxl, dxu;
+
+        //	lower boundary
+        dxl		 =  0.0;
+        dxu		 =  x[k*row_s+1] - x[k*row_s+0];
+        
+        Dxx[k*numX*4+0*4+0] =  0.0;
+        Dxx[k*numX*4+0*4+1] =  0.0;
+        Dxx[k*numX*4+0*4+2] =  0.0;
+            Dxx[k*numX*4+0*4+3] =  0.0;
+        
+        //	standard case
+        for(unsigned i=1;i<n-1;i++)
+        {
+            dxl      = x[k*row_s+i]   - x[k*row_s+i-1];
+            dxu      = x[k*row_s+i+1] - x[k*row_s+i];
+
+            Dxx[k*numX*4+i*4+0] =  2.0/dxl/(dxl+dxu);
+            Dxx[k*numX*4+i*4+1] = -2.0*(1.0/dxl + 1.0/dxu)/(dxl+dxu);
+            Dxx[k*numX*4+i*4+2] =  2.0/dxu/(dxl+dxu);
+            Dxx[k*numX*4+i*4+3] =  0.0;
+        }
+
+        //	upper boundary
+        dxl		   =  x[k*row_s+n-1] - x[k*row_s+n-2];
+        dxu		   =  0.0;
+
+        Dxx[k*numX*4+(n-1)*4+0] = 0.0;
+        Dxx[k*numX*4+(n-1)*4+1] = 0.0;
+        Dxx[k*numX*4+(n-1)*4+2] = 0.0;
+        Dxx[k*numX*4+(n-1)*4+3] = 0.0;
+    }
+}

@@ -67,6 +67,65 @@ struct PrivGlobs {
     }
 } __attribute__ ((aligned (128)));
 
+struct PrivGlobsCuda {
+
+    //	grid
+    REAL*      myX;        // [outer][numX]
+    REAL*      myY;        // [outer][numY]
+    REAL*      myTimeline; // [outer][numT]
+    unsigned*  myXindex;   // [outer]
+    unsigned*  myYindex;   // [outer]
+
+    //	variable
+    REAL* myResult; // [outer][numX][numY]
+
+    //	coeffs
+    REAL*     myVarX; // [outer][numX][numY]
+    REAL*     myVarY; // [outer][numX][numY]
+
+    //	operators
+    REAL*     myDxx;  // [outer][numX][4]
+    REAL*     myDyy;  // [outer][numY][4]
+
+    unsigned sizeX;
+    unsigned sizeY;
+    unsigned sizeT;
+    unsigned sizeO;
+
+    PrivGlobsCuda( ) {
+        printf("Invalid Contructor: need to provide the array sizes! EXITING...!\n");
+        exit(0);
+    }
+
+    PrivGlobsCuda(  const unsigned int& numX,
+                const unsigned int& numY,
+                const unsigned int& numT,
+                const unsigned int& outer
+             ) {
+
+        cudaMalloc((void**) &this->myXindex, outer * sizeof(unsigned));
+        cudaMalloc((void**) &this->myYindex, outer * sizeof(unsigned));
+
+        cudaMalloc((void**) &this->myX, outer*numX*sizeof(REAL));        
+        cudaMalloc((void**) &this->myY, outer*numY*sizeof(REAL));        
+
+        cudaMalloc((void**) &this->myDxx, outer*numX*4*sizeof(REAL));  
+        cudaMalloc((void**) &this->myDyy, outer*numY*4*sizeof(REAL));  
+
+        cudaMalloc((void**) &this->myTimeline, outer*numT*sizeof(REAL));  
+
+        cudaMalloc((void**) &this->myVarX, outer*numX*numY*sizeof(REAL));  
+        cudaMalloc((void**) &this->myVarY, outer*numX*numY*sizeof(REAL));  
+        cudaMalloc((void**) &this->myResult, outer*numX*numY*sizeof(REAL));  
+
+
+	    this->sizeX = numX;
+        this->sizeY = numY;
+        this->sizeT = numT;
+        this->sizeO = outer;
+    }
+};
+
 
 void initGrid(  const REAL s0, const REAL alpha, const REAL nu,const REAL t, 
                 const unsigned numX, const unsigned numY, const unsigned numT, const unsigned outer, PrivGlobs& globs   
