@@ -333,8 +333,6 @@ void   run_OrigCPU(
 		       REAL*           res   // [outer] RESULT
  ) {
 
-    // printf("START");
-
     // calculating cuda dim
 
     int full_block_size = 256;
@@ -353,15 +351,6 @@ void   run_OrigCPU(
 
     REAL* strike = new REAL[outer];
     REAL* dtInv = (REAL*) malloc(outer*sizeof(REAL));
-
-    REAL* u = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
-    REAL* v = (REAL*) malloc(outer * numY * numX * sizeof(REAL)); // [outer][numY][numX]
-
-    REAL* a = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
-    REAL* b = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
-    REAL* c = (REAL*) malloc(outer * numZ * numZ * sizeof(REAL));
-    REAL* y = (REAL*) malloc(outer * numX * numY * sizeof(REAL));
-    REAL* yy = (REAL*) malloc(outer * numX * numY * sizeof(REAL));
 
      // ----- MAIN LOOP ------
 
@@ -469,7 +458,6 @@ void   run_OrigCPU(
         cudaMemcpy(globs.myTimeline, d_myTimeline, outer * numT * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(d_myResult, globs.myResult, outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
         cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
-        cudaMemcpy(d_u,        u,              outer * numX * numY * sizeof(REAL), cudaMemcpyHostToDevice);
            
        explicitX<<<grid_3, block_2>>>(outer,
 				     numX,
@@ -489,9 +477,6 @@ void   run_OrigCPU(
         explicitY<<<grid_3_2, block_2>>>(outer,
 	        numX, numY, d_myResult, d_myVarY, d_myDyy, d_v, d_u);
         cudaDeviceSynchronize();
-        
-        cudaMemcpy(u, d_u, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(v, d_v, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
 
     // ------- implicit x
 
@@ -515,13 +500,6 @@ void   run_OrigCPU(
             d_c, d_y, d_yy, d_my_result);
         cudaDeviceSynchronize();
 
-
-        cudaMemcpy(a, d_a, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(b, d_b, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(c, d_c, outer * numZ * numZ * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(u, d_u, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(yy, d_yy, outer * numY * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
-        cudaMemcpy(y, d_y, outer * numY * numX * sizeof(REAL), cudaMemcpyDeviceToHost);
         cudaMemcpy(globs.myResult, d_my_result, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
         
     }
