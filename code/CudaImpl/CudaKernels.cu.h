@@ -282,6 +282,22 @@ __global__ void implicitY_tridag(const int outer,
 }
 
 
+__global__ void updateRes(const int outer,
+                          const int numX,
+			              const int numY,
+                          const unsigned* d_myXindex,
+                          const unsigned* d_myYindex,
+                          const REAL* d_my_result,
+			              REAL* d_res)                     
+{
+    int gidk = blockIdx.x*blockDim.x + threadIdx.x;
+    if (gidk < outer) { 
+        int ind = gidk*numX*numY + d_myXindex[gidk]*numY + d_myYindex[gidk];
+        d_res[gidk] = d_my_result[ind];
+    }
+}
+
+
 __device__ void tridag(
     const REAL*   a,   // size [n]
     const REAL*   b,   // size [n]

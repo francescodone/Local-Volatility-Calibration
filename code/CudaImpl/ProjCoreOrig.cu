@@ -139,11 +139,19 @@ void   run_OrigCPU(
         
     }
 
-    cudaMemcpy(globs.myResult, d_my_result, outer * numX * numY * sizeof(REAL), cudaMemcpyDeviceToHost);
+    REAL *d_res;
+    unsigned *d_myXindex, *d_myYindex;
+    cudaMalloc((void**) &d_myXindex, outer * sizeof(unsigned));
+    cudaMalloc((void**) &d_myYindex, outer * sizeof(unsigned));
+    cudaMalloc((void**) &d_res, outer * sizeof(REAL));
 
-    for( unsigned k = 0; k < outer; ++ k ) { 
-        res[k] = globs.myResult[k*numX*numY + globs.myXindex[k]*numY + globs.myYindex[k]];
-    }
+    cudaMemcpy(d_myXindex, globs.myXindex, outer * sizeof(unsigned), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_myYindex, globs.myYindex, outer * sizeof(unsigned), cudaMemcpyHostToDevice); 
+
+    updateRes<<<num_blocks_outer, full_block_size>>>(outer, numX, numY, d_myXindex, d_myYindex, d_my_result, d_res);
+    cudaDeviceSynchronize;
+
+    cudaMemcpy(res, d_res, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
 
     cudaFree(d_myX);
     cudaFree(d_myY);
@@ -154,6 +162,10 @@ void   run_OrigCPU(
     cudaFree(d_myDyy);
     cudaFree(d_dtInv);
     cudaFree(d_my_result);
+    cudaFree(d_myXindex);
+    cudaFree(d_myYindex);
+    
+    cudaFree(d_res);
     
     cudaFree(d_u);
     cudaFree(d_v);
