@@ -144,8 +144,8 @@ __global__ void explicitY(const int outer,
                           REAL* d_u) 
 {
     int gidk = blockIdx.z*blockDim.z + threadIdx.z;
-    int gidj = blockIdx.y*blockDim.y + threadIdx.y;
-    int gidi = blockIdx.x*blockDim.x + threadIdx.x;
+    int gidi = blockIdx.y*blockDim.y + threadIdx.y;
+    int gidj = blockIdx.x*blockDim.x + threadIdx.x;
 
     if (gidk < outer && gidi < numX && gidj < numY) {
 

@@ -19,8 +19,8 @@ void   run_OrigCPU(
 
     // calculating cuda dim
 
-    int full_block_size = 256;
-    int block_size = 16;
+    int full_block_size = 128;
+    int block_size = 32;
 
     dim3 block_2(block_size, block_size, 1);
 
@@ -106,7 +106,7 @@ void   run_OrigCPU(
 
 
         // ------ explicit y
-        explicitY<<<grid_3_2, block_2>>>(outer,
+        explicitY<<<grid_3, block_2>>>(outer,
 	        numX, numY, globsCuda.myResult, globsCuda.myVarY, globsCuda.myDyy, d_v, d_u);
         // cudaDeviceSynchronize();
 
