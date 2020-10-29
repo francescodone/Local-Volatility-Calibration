@@ -20,7 +20,7 @@ void   run_OrigCPU(
     // calculating cuda dim
 
     int full_block_size = 256;
-    int block_size = 32;
+    int block_size = 16;
 
     dim3 block_2(block_size, block_size, 1);
 
@@ -97,6 +97,10 @@ void   run_OrigCPU(
     cudaMemcpy(d_myDyy, globs.myDyy, outer * numY * 4 * sizeof(REAL), cudaMemcpyHostToDevice);
     cudaMemcpy(d_myDxx,    globs.myDxx,    outer * numX *    4 * sizeof(REAL), cudaMemcpyHostToDevice);
 
+    
+    REAL *d_u_T;
+    cudaMalloc((void**) &d_u_T, outer * numX * numY * sizeof(REAL));
+
 
     for(int g = globs.sizeT-2;g>=0;--g) { // seq
 
@@ -110,14 +114,27 @@ void   run_OrigCPU(
         cudaDeviceSynchronize();   
 
         // ---- explicit x
+
+        // matrix transposition 
+        
+        // matTransposeTiled<<<numX, numY, outer>>>(d_u, d_u_T, numX, numY, outer);
+        // cudaDeviceSynchronize();
+
+
         explicitX<<<grid_3, block_2>>>(outer, numX, numY, d_dtInv, d_my_result,
 			d_myVarX, d_myDxx, d_u);
         cudaDeviceSynchronize();
+
+        // matTransposeTiled<<<numY, numX, outer>>>(d_u_T, d_u, numY, numX, outer);
+        // cudaDeviceSynchronize();
+
 
         // ------ explicit y
         explicitY<<<grid_3_2, block_2>>>(outer,
 	        numX, numY, d_my_result, d_myVarY, d_myDyy, d_v, d_u);
         cudaDeviceSynchronize();
+
+
 
         // ------- implicit x
         implicitX<<<grid_3_2, block_2>>>(outer, numX, numY, d_dtInv, d_myVarX, d_myDxx, d_a, d_b, d_c);
@@ -149,7 +166,7 @@ void   run_OrigCPU(
     cudaMemcpy(d_myYindex, globs.myYindex, outer * sizeof(unsigned), cudaMemcpyHostToDevice); 
 
     updateRes<<<num_blocks_outer, full_block_size>>>(outer, numX, numY, d_myXindex, d_myYindex, d_my_result, d_res);
-    cudaDeviceSynchronize;
+    cudaDeviceSynchronize();
 
     cudaMemcpy(res, d_res, outer * sizeof(REAL), cudaMemcpyDeviceToHost);
 

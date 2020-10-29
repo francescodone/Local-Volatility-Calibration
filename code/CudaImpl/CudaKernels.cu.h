@@ -109,21 +109,23 @@ __global__ void explicitX(const int outer,
     int gidj = blockIdx.x*blockDim.x + threadIdx.x;
 
     if (gidk < outer && gidi < numX && gidj < numY) {
-        d_u[gidk*numX*numY+gidj*numX+gidi] = 
+        //const int d_ind = gidk*numX*numY+gidi*numY+gidj;
+        const int d_ind = gidk*numX*numY+gidj*numX+gidi;
+        d_u[d_ind] = 
             d_dtInv[gidk]*d_myResult[gidk*numX*numY + gidi*numY + gidj];
 
         if(gidi > 0) { 
-            d_u[gidk*numX*numY+gidj*numX+gidi] += 
+            d_u[d_ind] += 
                 0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+0] ) 
                 * d_myResult[gidk*numX*numY + (gidi-1)*numY + gidj];
         }
 
-        d_u[gidk*numX*numY+gidj*numX+gidi] += 
+        d_u[d_ind] += 
             0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+1] )
             * d_myResult[gidk*numX*numY + gidi*numY + gidj];
 
         if(gidi < numX-1) {
-            d_u[gidk*numX*numY+gidj*numX+gidi] += 
+            d_u[d_ind] += 
                 0.5*( 0.5*d_myVarX[gidk*numX*numY+gidi*numY+gidj]*d_myDxx[gidk*numX*4+gidi*4+2] )
                 * d_myResult[gidk*numX*numY + (gidi+1)*numY + gidj];
         }
