@@ -5,7 +5,7 @@ GPU_OPTS   = -D lgWARP=5
 
 SOURCES_CPP =ProjectMain.cu ProjHelperFun.cu ProjCoreOrig.cu 
 SRC1 = ProjectMain.cu
-HELPERS     =ProhHelperFun.h ../include/Constants.h ../include/ParseInput.h ../include/ParserC.h ../include/OpenmpUtil.h
+HELPERS     =ProhHelperFun.h ../include/Constants.h ../include/ParseInput.h ../include/ParserC.h ../include/OpenmpUtil.h CudaKernels.cu.h
 EXECUTABLE  =runproject
 
 default: compile
