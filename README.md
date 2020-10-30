@@ -13,7 +13,7 @@ Medium | 411741 | 513036 | 5240587
 Large | 7211866 | 16026744 | 232179276 
 
 ## Report
-[Report.pdf](https://github.com/francescodone/Local-Volatility-Calibration/tree/master/Report/PDF/Report.pdf)
+[Report.pdf](Report.pdf)
 
 ## Usage
 ```console
@@ -39,11 +39,6 @@ Code
  │  ├─CudaUtilProj.cu.h (provides stubs for calling transposition and inclusive (segmented) scan)
  │  └─TestCudaUtil.cu (a simple tester for  and scan)
  └─ParTridagCuda (contains code that demonstrates how TRIDAG can be parallelized by intra-block scans, i.e., it assumes that NUM_X, NUM_Y are a power of 2 less than or equal to 1024)
-
-Report
- ├─LaTex
- └─PDF
-    └─Report.pdf
 ```
 
 ## Authors
